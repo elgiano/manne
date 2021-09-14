@@ -1,0 +1,1 @@
+This is the folder where datasets should be put. A single dataset should be a single .wav file.

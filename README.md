@@ -1,40 +1,37 @@
 # manne
-Remaking My ANNe effect
 
-Tested with Python 2.7.12 
+Adapted ANNe effect from [JITColonel/manne](https://github.com/JTColonel/manne).
 
-I suggest using a virtualenvironment to ensure that all packages are correct
+Reference paper:
+[J. T. Colonel, S. Keene - Conditioning Autoencoder Latent Spaces for Real-Time Timbre Interpolation and Synthesis (2020)](
+https://deepai.org/publication/conditioning-autoencoder-latent-spaces-for-real-time-timbre-interpolation-and-synthesis)
 
+Tested with Python 3.9
+
+### Setup
 ```
-mkdir venv
-virtualenv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-From what I remember, this application requires ffmpeg and portaudio19-dev 
+### Training
 
-To start the program, run 
+Datasets are stored as single wave files in the `waves` folder. The first step is to preprocess a dataset and store STFT frames in a .npy files in the `frames` folder.
 
 ```
-python manne_gui.py
+python wav2frames.py your_filename.wav
 ```
+Note that the program looks for `your_filename.wav` in the `waves` folder, so it doesn't need to be a path. It will save frames in `frames/your_filename.npy`
 
-Type the relative path of the track you would like to filter into the "Track Name" box.
+To train the network on a .npy dataset run:
+```
+python manne_train.py your_filename --n-epoch 30
+```
+This trains a VAE for 30 epochs on the dataset in `frames/your_filename.npy` (note there is no .npy in the argument passed to the program above).
+Models (encoder and decoder) are automatically saved in the `models` folder after training.
 
-Type the prefix of the trained model you would like to run (in this case just ```all_frames```) into the "Model Name" box.
-
-Clicking "START" will start to filter the track through the neural network and play out audio in real time. Change the value of the sliders to change the latent representation of the audio. 
-
-Clicking "PAUSE" will pause the audio output and freeze the track where it is. I'm pretty sure clicking "START" again will resume the track.
-
-To render an entire track with fixed latent activations, click "RENDER". The song will be output as "rendered.wav" in your given directory. It should be a mono wav file, 16bit PCM, 44.1kHz.
-
-To begin a recording of you altering the latents as the track plays, click "RECORD" and begin moving the sliders. 
-To end a recording, just click the "RECORD" button again so that it is unchecked. The recorded wav file will be output as "recorded.wav" in your given directory. It should be a mono wav file, 16bit PCM, 44.1kHz.
-
-Clicking "QUIT" will close the application.
-
-^_^
-
-"MANNe" pronunciation guide: https://www.youtube.com/watch?v=EmZvOhHF85I&feature=youtu.be&t=5
+### Rendering predictions
+```
+python manne_render.py your_model_filename
+```

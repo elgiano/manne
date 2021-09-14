@@ -1,0 +1,3 @@
+.venv
+waves/*.wav
+frames/*.npy
