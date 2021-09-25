@@ -1,3 +1,11 @@
 .venv
 waves/*.wav
 frames/*.npy
+frames/*.tfrecords
+frames/*.tfrecords.meta
+models/**
+renders/**
+models/*.h5
+__pycache__
+*.pdf
+*.csv
