@@ -123,8 +123,8 @@ def wavToFrames(filename_in, fft_size, fft_hop, augmentations):
     # y = y[:44100 * 10]
     print("Calculating spectral frames...")
     D = librosa.stft(y, n_fft=fft_size, hop_length=fft_hop, window='hann')
-    print(f"numBins: {D.shape[0]}, numFrames: {D.shape[1]}")
     temp = D[:-1, :]
+    print(f"numBins: {temp.shape[0]}, numFrames: {temp.shape[1]}")
     # phase = np.angle(temp)
     print("Normalizing magnitudes...")
     temp = np.abs(temp)
