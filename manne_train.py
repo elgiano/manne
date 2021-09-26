@@ -371,7 +371,7 @@ class ManneTrain:
 
 if __name__ == '__main__':
     args = get_arguments()
-    my_manne = ManneTrain(args)
+    my_manne = ManneTrain(vars(args))
     if args.mode == 'plot':
         my_manne.just_plot()
     else:
