@@ -23,7 +23,7 @@ class ManneCheckpoint(ModelCheckpoint):
             # Block only when saving interval is reached.
             logs = tf_utils.sync_to_numpy_or_python_type(logs)
             self.epochs_since_last_save = 0
-            filepath = self._get_file_path(epoch, batch, logs)
+            filepath = self._get_file_path(epoch, logs)
 
             try:
                 if self.save_best_only:
