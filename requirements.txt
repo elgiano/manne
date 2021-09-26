@@ -1,5 +1,6 @@
 numpy
 tensorflow
+tensorflow-probability
 librosa
 pyaudio
 python-rtmidi

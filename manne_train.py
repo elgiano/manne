@@ -1,64 +1,39 @@
+from manne_dataset import ManneDatasetReader
+import argparse
+from os.path import join, splitext, isdir
+from os import mkdir, getcwd
+from matplotlib.backends.backend_pdf import PdfPages
+import matplotlib.pyplot as plt
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.layers import Input, Dense, Lambda, Concatenate, LeakyReLU
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
-from os import mkdir, getcwd
-from os.path import join, splitext, isdir
-import argparse
-from manne_dataset import ManneDatasetReader
+import tensorflow_probability as tfp
+tfd = tfp.distributions
+tfpl = tfp.layers
 # from manne_checkpoint import ManneCheckpoint
-
-global TRAINING_SIZE
-global VALIDATION_SIZE
-TRAINING_SIZE = 0.85
-VALIDATION_SIZE = 0.075
 
 global alpha, beta, z_mean, z_log_var, numbins
 beta = tf.Variable(3e-7)
 alpha = tf.Variable(0.3)
-z_mean = tf.Variable(tf.zeros(8), shape=tf.TensorShape(None),
+z_mean = tf.Variable([tf.zeros(8)], shape=tf.TensorShape((None, 8)),
                      name='z_mean', trainable=False)
-z_log_var = tf.Variable(tf.zeros(8), shape=tf.TensorShape(None),
+z_log_var = tf.Variable([tf.zeros(8)], shape=tf.TensorShape((None, 8)),
                         name='z_log_var', trainable=False)
 numbins = tf.Variable(0, trainable=False, dtype=tf.int32)
 
 
-def kl(inputs, outputs):
-    global z_mean, z_log_var
-    kl_loss = 1 + z_log_var - \
-        tf.math.square(z_mean) - tf.math.exp(z_log_var)
-    kl_loss = tf.math.reduce_sum(kl_loss, axis=-1)
-    kl_loss *= -0.5
-    return kl_loss
+def negative_log_likelihood(x, rv_x):
+    global numbins
+    return -(rv_x).log_prob(x[:, :numbins])
 
 
 def mse(inputs, outputs):
     global numbins
     return tf.keras.losses.mse(inputs[:, :numbins], outputs)
-
-
-def vae_sampling(args):
-    global z_mean, z_log_var
-    z_mean.assign(args[0])
-    z_log_var.assign(args[1])
-    epsilon = tf.random.normal(shape=tf.shape(z_mean))
-    return z_mean + tf.math.exp(0.5 * z_log_var) * epsilon
-
-
-def vae_loss(inputs, outputs):
-    global beta, z_mean, z_log_var, numbins
-    reconstruction_loss = tf.keras.losses.mse(inputs[:, :numbins], outputs)
-    kl_loss = 1 + z_log_var - \
-        tf.math.square(z_mean) - tf.math.exp(z_log_var)
-    kl_loss = tf.math.reduce_sum(kl_loss, axis=-1)
-    kl_loss *= -0.5 * beta
-    vae_loss = tf.math.reduce_sum(reconstruction_loss + kl_loss)
-    return vae_loss
 
 
 # on_epoch_end callback for training
@@ -77,12 +52,14 @@ def get_arguments():
     parser.add_argument('--distribute', type=bool, default=False)
     parser.add_argument('--n_epochs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=200)
-    parser.add_argument('--skip', type=bool, default=False)
+    parser.add_argument('--train_size', type=float, default=0.8)
+    parser.add_argument('--val_size', type=float, default=0.1)
+    parser.add_argument('--skip', action="store_true")
     return parser.parse_args()
 
 
 class ManneTrain:
-    def __init__(self, args, plot_summaries=False):
+    def __init__(self, args, plot_summaries=True):
         self.plot_summaries = plot_summaries
         self.train_data = []
         self.val_data = []
@@ -93,12 +70,14 @@ class ManneTrain:
         self.encoder_widths = []
         self.decoder_widths = []
 
-        self.n_epochs = args.n_epochs
-        self.net_type = args.net_type
-        self.skip = args.skip
-        self.batch_size = args.batch_size
-        self.filename = args.filename
-        if args.distribute:
+        self.n_epochs = args['n_epochs']
+        self.net_type = args['net_type']
+        self.skip = args['skip']
+        self.batch_size = args['batch_size']
+        self.train_size = args['train_size']
+        self.val_size = args['val_size']
+        self.filename = args['filename']
+        if args['distribute']:
             self.distribution_strategy = tf.distribute.MirroredStrategy()
         else:
             self.distribution_strategy = tf.distribute.get_strategy()
@@ -115,9 +94,6 @@ class ManneTrain:
     # DATASET
 
     def load_dataset(self):
-        global TRAINING_SIZE
-        global VALIDATION_SIZE
-
         skipstr = "skip"
         if not self.skip:
             skipstr = "noskip"
@@ -133,7 +109,7 @@ class ManneTrain:
         numbins.assign(self.num_bins)
         self.fft_size = (self.num_bins - 1) * 2
         (train, val, test) = dataset_reader.get_splits(
-            TRAINING_SIZE, VALIDATION_SIZE, self.batch_size)
+            self.train_size, self.val_size, self.batch_size)
         self.train_data = train
         self.val_data = val
         self.test_data = test
@@ -176,15 +152,18 @@ class ManneTrain:
             units=self.encoder_widths[-1], activation='sigmoid', kernel_regularizer=l2(l2_penalty))(encoded)
 
         if self.net_type == 'vae':
-            z_mean = Dense(
-                self.encoder_widths[-1], input_shape=(self.encoder_widths[-1],), name='z_mean')(encoded)
-            z_log_var = Dense(self.encoder_widths[-1], input_shape=(
-                self.encoder_widths[-1],), name='z_log_var')(encoded)
-            z = Lambda(vae_sampling, output_shape=(
-                self.encoder_widths[-1],), name='z')([z_mean, z_log_var])
-            self.encoder = Model(input_spec, [z_mean, z_log_var, z])
-        else:
-            self.encoder = Model(input_spec, encoded)
+            dim_z = self.encoder_widths[-1]
+            prior = tfd.Independent(tfd.Normal(loc=tf.zeros(
+                dim_z), scale=1.), reinterpreted_batch_ndims=1)
+            encoded = Dense(tfpl.IndependentNormal.params_size(
+                dim_z), activation=None, name='z_params')(encoded)
+            encoded = tfpl.IndependentNormal(event_shape=dim_z,
+                                             convert_to_tensor_fn=tfd.Distribution.sample,
+                                             activity_regularizer=tfpl.KLDivergenceRegularizer(
+                                                 prior, weight=beta),
+                                             name='z_layer')(encoded)
+
+        self.encoder = Model(input_spec, encoded)
 
         if self.skip is True:
             input_latent = Input(
@@ -201,28 +180,28 @@ class ManneTrain:
                             activation=None,
                             kernel_regularizer=l2(l2_penalty))(decoded)
             decoded = LeakyReLU(alpha=alpha_val)(decoded)
-        decoded = Dense(units=2049,
+        decoded = Dense(units=self.num_bins,
                         activation='relu',
                         kernel_regularizer=l2(l2_penalty))(decoded)
+        if self.net_type == 'vae':
+            decoded = Dense(
+                units=tfpl.IndependentNormal.params_size(self.num_bins))(decoded)
+            decoded = tfpl.IndependentNormal(
+                self.num_bins, name='x_layer', )(decoded)
         self.decoder = Model(input_latent, decoded)
 
     def make_net(self):
         auto_input = Input(shape=(self.feature_length, ))
         encoded = self.encoder(auto_input)
 
-        if self.net_type == 'vae':
-            latents = encoded[2]
-        else:
-            latents = encoded
-
         if self.skip is True:
             onehot_input = Input(shape=(self.augmentation_length,))
-            new_latents = Concatenate()([latents, onehot_input])
+            new_latents = Concatenate()([encoded, onehot_input])
             decoded = self.decoder(new_latents)
             self.network = Model(
                 inputs=[auto_input, onehot_input], outputs=decoded)
         else:
-            decoded = self.decoder(latents)
+            decoded = self.decoder(encoded)
             self.network = Model(inputs=[auto_input], outputs=decoded)
 
         if self.plot_summaries:
@@ -261,7 +240,7 @@ class ManneTrain:
         if self.net_type == 'vae':
             beta_changer = LambdaCallback(on_epoch_end=change_params)
             self.network.compile(optimizer=Adam(
-                learning_rate=adam_rate), loss=vae_loss, metrics=[mse, kl])
+                learning_rate=adam_rate), loss=negative_log_likelihood, metrics=[mse])
             self.network.fit(self.train_data,
                              epochs=self.n_epochs,
                              validation_data=self.val_data,
@@ -305,8 +284,12 @@ class ManneTrain:
         valset_eval_in = self.get_samples(self.val_data, num_plots)
         testset_eval_in = self.get_samples(self.test_data, num_plots)
 
-        valset_eval = self.network.predict(valset_eval_in, verbose=1)
-        testset_eval = self.network.predict(testset_eval_in, verbose=1)
+        if self.net_type == 'vae':
+            valset_eval = self.network(valset_eval_in).sample()
+            testset_eval = self.network(testset_eval_in).sample()
+        else:
+            valset_eval = self.network.predict(valset_eval_in, verbose=1)
+            testset_eval = self.network.predict(testset_eval_in, verbose=1)
 
         print('Printing PDFs')
         self.plot_pdf('val', valset_eval_in, valset_eval, val_metrics)
@@ -370,7 +353,7 @@ class ManneTrain:
         adam_rate = 5e-4
         if self.net_type == 'vae':
             self.network.compile(optimizer=Adam(
-                learning_rate=adam_rate), loss=vae_loss, metrics=[mse, kl])
+                learning_rate=adam_rate), loss=negative_log_likelihood, metrics=[negative_log_likelihood])
         else:
             self.network.compile(optimizer=Adam(
                 learning_rate=adam_rate), loss=mse, metrics=[mse])
