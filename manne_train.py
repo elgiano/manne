@@ -42,6 +42,7 @@ def get_arguments():
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--distribute', type=bool, default=False)
     parser.add_argument('--n_epochs', type=int, default=5)
+    parser.add_argument('--batch_size', type=int, default=200)
     parser.add_argument('--skip', type=bool, default=False)
     return parser.parse_args()
 
@@ -64,6 +65,7 @@ class ManneTrain:
         self.n_epochs = args.n_epochs
         self.net_type = args.net_type
         self.skip = args.skip
+        self.batch_size = args.batch_size
         self.filename = args.filename
         if args.distribute:
             self.distribution_strategy = tf.distribute.MirroredStrategy()
@@ -98,7 +100,7 @@ class ManneTrain:
         self.num_bins = self.feature_length - self.augmentation_length
         self.fft_size = (self.num_bins - 1) * 2
         (train, val, test) = dataset_reader.get_splits(
-            TRAINING_SIZE, VALIDATION_SIZE, 64)
+            TRAINING_SIZE, VALIDATION_SIZE, self.batch_size)
         self.train_data = train
         self.val_data = val
         self.test_data = test
