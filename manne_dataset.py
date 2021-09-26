@@ -72,9 +72,6 @@ class ManneDatasetReader():
         val_data = test_data.skip(test_size)
         test_data = test_data.take(test_size)
 
-        print(self.dataset_size, train_size, test_size)
-        print(len(list(test_data)))
-
         train_data = train_data.batch(batch_size, drop_remainder=True)
         val_data = val_data.batch(batch_size, drop_remainder=True)
         test_data = test_data.batch(batch_size, drop_remainder=True)
