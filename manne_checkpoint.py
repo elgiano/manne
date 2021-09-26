@@ -15,7 +15,7 @@ class ManneCheckpoint(ModelCheckpoint):
                  for name in ["", "_encoder", "_decoder"]]
         return zip([self.model] + self.submodels, paths)
 
-    def _save_model(self, epoch, batch, logs):
+    def _save_model(self, epoch, logs):
         logs = logs or {}
 
         if isinstance(self.save_freq,
