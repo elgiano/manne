@@ -255,8 +255,8 @@ class ManneTrain:
                              validation_data=self.val_data,
                              callbacks=[alpha_changer]
                              )
-        self.encoder.save(f'models/{self.model_name}_trained_encoder.h5')
-        self.decoder.save(f'models/{self.model_name}_trained_decoder.h5')
+        self.encoder.save(f'models/{self.model_name}_trained_encoder')
+        self.decoder.save(f'models/{self.model_name}_trained_decoder')
 
     # EVALUATION
 
@@ -362,10 +362,10 @@ class ManneTrain:
 
     def load_net(self):
         enc_filename = join(
-            getcwd(), 'models', self.model_name + '_trained_encoder.h5')
+            getcwd(), 'models', self.model_name + '_trained_encoder')
         self.encoder = load_model(enc_filename, compile=False)
         dec_filename = join(
-            getcwd(), 'models', self.model_name + '_trained_decoder.h5')
+            getcwd(), 'models', self.model_name + '_trained_decoder')
         self.decoder = load_model(dec_filename, compile=False)
 
 
