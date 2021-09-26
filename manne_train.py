@@ -233,8 +233,8 @@ class ManneTrain:
         model_path = os.path.join('models', self.model_name)
         if not os.path.isdir(model_path):
             os.mkdir(model_path)
-        checkpoint_filepath = os.path.join(
-            model_path, self.model_name + "_epoch{epoch}.h5")
+        # checkpoint_filepath = os.path.join(
+        #     model_path, self.model_name + "_epoch{epoch}.h5")
 
         # checkpoint_cb = ManneCheckpoint(
         #     filepath=checkpoint_filepath,
@@ -243,11 +243,11 @@ class ManneTrain:
         # )
         # checkpoint_cb.set_submodels(self.encoder, self.decoder)
 
-        checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
-            filepath=checkpoint_filepath,
-            save_weights_only=False,
-            save_best_only=True,
-        )
+        # checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
+        #     filepath=checkpoint_filepath,
+        #     save_weights_only=False,
+        #     save_best_only=True,
+        # )
 
         adam_rate = 5e-4
 
@@ -258,7 +258,7 @@ class ManneTrain:
             self.network.fit(self.train_data,
                              epochs=self.n_epochs,
                              validation_data=self.val_data,
-                             callbacks=[beta_changer, checkpoint_cb]
+                             callbacks=[beta_changer]
                              )
         else:
             alpha_changer = LambdaCallback(on_epoch_end=change_params)
@@ -267,7 +267,7 @@ class ManneTrain:
             self.network.fit(self.train_data,
                              epochs=self.n_epochs,
                              validation_data=self.val_data,
-                             callbacks=[alpha_changer, checkpoint_cb]
+                             callbacks=[alpha_changer]
                              )
         self.encoder.save(f'models/{self.model_name}_trained_encoder.h5')
         self.decoder.save(f'models/{self.model_name}_trained_decoder.h5')
