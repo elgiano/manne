@@ -123,7 +123,7 @@ class ManneDatasetWriter():
 def wavToFrames(filename_in, fft_size, fft_hop, augmentations):
     print(f"Loading audiofile: {filename_in}")
     y, sr = librosa.load(filename_in, sr=44100)
-    y = y[:44100 * 10]
+    # y = y[:44100 * 10]
     print("Calculating spectral frames...")
     D = librosa.stft(y, n_fft=fft_size, hop_length=fft_hop, window='hann')
     print(f"numBins: {D.shape[0]}, numFrames: {D.shape[1]}")
