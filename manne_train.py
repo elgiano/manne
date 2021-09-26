@@ -364,8 +364,12 @@ class ManneTrain:
         self.load_net()
         self.make_net()
         adam_rate = 5e-4
-        self.network.compile(optimizer=Adam(
-            learning_rate=adam_rate), loss=self.my_mse, metrics=[self.my_mse])
+        if self.net_type == 'vae':
+            self.network.compile(optimizer=Adam(
+                learning_rate=adam_rate), loss=self.get_loss, metrics=[self.my_mse, self.my_kl])
+        else:
+            self.network.compile(optimizer=Adam(
+                learning_rate=adam_rate), loss=self.my_mse, metrics=[self.my_mse])
         self.evaluate_net()
         # self.save_latents()
 
