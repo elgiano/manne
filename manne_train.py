@@ -236,13 +236,18 @@ class ManneTrain:
         checkpoint_filepath = os.path.join(
             model_path, self.model_name + "_epoch{epoch}.h5")
 
-        checkpoint_cb = ManneCheckpoint(
+        # checkpoint_cb = ManneCheckpoint(
+        #     filepath=checkpoint_filepath,
+        #     save_weights_only=False,
+        #     save_best_only=True,
+        # )
+        # checkpoint_cb.set_submodels(self.encoder, self.decoder)
+
+        checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
             filepath=checkpoint_filepath,
             save_weights_only=False,
             save_best_only=True,
         )
-
-        checkpoint_cb.set_submodels(self.encoder, self.decoder)
 
         adam_rate = 5e-4
 
