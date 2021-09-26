@@ -1,5 +1,5 @@
 from tensorflow.keras.callbacks import ModelCheckpoint
-from keras.utils import tf_utils
+from tensorflow.python.keras.utils import tf_utils
 from tensorflow.python.platform import tf_logging as logging
 from os.path import splitext
 
