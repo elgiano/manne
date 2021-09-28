@@ -7,6 +7,20 @@ import tensorflow as tf
 import pickle
 
 
+def get_augmentations_from_filename(filename):
+    augs = splitext(filename)[0].split("_")[-1].split('+')
+    n = 0
+    if 'chroma' in augs:
+        n += 12
+    if 'octave' in augs:
+        n += 8
+    return (augs, n)
+
+
+def get_skip_from_filename(filename):
+    return splitext(filename)[0].split("_")[1] == 'skip'
+
+
 class ManneDatasetReader():
 
     def __init__(self, filename, skip_connection=True):
@@ -20,12 +34,8 @@ class ManneDatasetReader():
                 f"[ManneDataset] Error: unknown extension '{ext}' for file '{filename}'")
             return
 
-        self.augmentations = splitext(filename)[0].split("_")[-1].split('+')
-        self.augmentation_size = 0
-        if 'chroma' in self.augmentations:
-            self.augmentation_size += 12
-        if 'octave' in self.augmentations:
-            self.augmentation_size += 8
+        self.augmentations, self.augmentation_size = get_augmentations_from_filename(
+            filename)
 
         # Handling case where Keras expects two inputs
         if skip_connection is True:
@@ -137,12 +147,21 @@ def wavToFrames(filename_in, fft_size, fft_hop, augmentations):
     # out_phase = phase[~np.all(temp == 0, axis=1)]
     print(f"found {output.shape[0] - temp.shape[0]} empty frames")
 
+    output = append_augmentations(augmentations, output, y, fft_size, fft_hop)
+
+    np.random.shuffle(output)
+    print(output.shape)
+    return output
+
+
+def append_augmentations(augmentations, mags, y, fft_size, fft_hop):
+    output = mags
     if 'chroma' in augmentations:
         print("Computing chroma augmentation")
-        chroma = librosa.feature.chroma_stft(S=np.transpose(output))
+        chroma = librosa.feature.chroma_stft(S=np.transpose(mags))
         chroma = (chroma == chroma.max(axis=1)[:, None]).astype(int)
         chroma = np.transpose(chroma)
-        output = np.hstack((output, chroma))
+        output = np.hstack((mags, chroma))
 
     if 'octave' in augmentations:
         print("Computing octave augmentation")
@@ -153,8 +172,6 @@ def wavToFrames(filename_in, fft_size, fft_hop, augmentations):
         octave = np.eye(8)[octave]
         output = np.hstack((output, octave))
 
-    np.random.shuffle(output)
-    print(output.shape)
     return output
 
 

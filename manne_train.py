@@ -59,8 +59,8 @@ def get_arguments():
 
 
 class ManneTrain:
-    def __init__(self, args, plot_summaries=True):
-        self.plot_summaries = plot_summaries
+    def __init__(self, args, print_summaries=False):
+        self.print_summaries = print_summaries
         self.train_data = []
         self.val_data = []
         self.test_data = []
@@ -204,7 +204,7 @@ class ManneTrain:
             decoded = self.decoder(encoded)
             self.network = Model(inputs=[auto_input], outputs=decoded)
 
-        if self.plot_summaries:
+        if self.print_summaries:
             print('\n net summary \n')
             self.network.summary()
             print('\n encoder summary \n')
@@ -216,9 +216,9 @@ class ManneTrain:
 
     def train_net(self):
 
-        model_path = join('models', self.model_name)
-        if not isdir(model_path):
-            mkdir(model_path)
+        # model_path = join('models', self.model_name)
+        # if not isdir(model_path):
+        #     mkdir(model_path)
         # checkpoint_filepath = join(
         #     model_path, self.model_name + "_epoch{epoch}.h5")
 
