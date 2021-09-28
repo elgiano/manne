@@ -64,10 +64,10 @@ def render_test_notes(model_name, out_dir, latent='noise', note_samples=100):
             outname = f'{latent}_{octave}-{name}'
             outname = join(note_dir, outname) + ".wav"
             if latent == 'noise':
-                noise = np.random.rand(note_samples, 8)
+                noise = np.random.rand(note_samples, m.latent_size)
             elif latent == 'line':
                 noise = np.linspace(np.random.rand(
-                    8), np.random.rand(8), note_samples)
+                     m.latent_size), np.random.rand(m.latent_size), note_samples)
             m.render_note(outname, chroma, octave, noise,
                           44100, 4096, 1024, rtpghi=True)
 
@@ -97,6 +97,7 @@ def render_tests(model_name, reverse_interpolations=False):
 
     for dur in [10, 20, 30]:
         render_test_sequences(model_name, test_result, dur)
+
 
 if __name__ == '__main__':
     render_tests('ae_skip_tusk_single_chroma+octave')

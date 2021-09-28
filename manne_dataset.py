@@ -21,6 +21,10 @@ def get_skip_from_filename(filename):
     return splitext(filename)[0].split("_")[1] == 'skip'
 
 
+def get_latent_dim_from_filename(filename):
+    return int(splitext(filename)[0].split("_")[2])
+
+
 class ManneDatasetReader():
 
     def __init__(self, filename, skip_connection=True):

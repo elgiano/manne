@@ -10,19 +10,15 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Input, Dense, Lambda, Concatenate, LeakyReLU
+from tensorflow.keras.layers import Input, Dense, Concatenate, LeakyReLU
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfpl = tfp.layers
 # from manne_checkpoint import ManneCheckpoint
 
-global alpha, beta, z_mean, z_log_var, numbins
+global alpha, beta, numbins
 beta = tf.Variable(3e-7)
 alpha = tf.Variable(0.3)
-z_mean = tf.Variable([tf.zeros(8)], shape=tf.TensorShape((None, 8)),
-                     name='z_mean', trainable=False)
-z_log_var = tf.Variable([tf.zeros(8)], shape=tf.TensorShape((None, 8)),
-                        name='z_log_var', trainable=False)
 numbins = tf.Variable(0, trainable=False, dtype=tf.int32)
 
 
@@ -47,10 +43,11 @@ def change_params(epoch, logs):
 def get_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument('filename', type=str)
-    parser.add_argument('--net_type', type=str, default='vae')
+    parser.add_argument('--net_type', type=str, default='ae')
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--distribute', type=bool, default=False)
     parser.add_argument('--n_epochs', type=int, default=5)
+    parser.add_argument('--latent_size', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=200)
     parser.add_argument('--train_size', type=float, default=0.8)
     parser.add_argument('--val_size', type=float, default=0.1)
@@ -59,7 +56,7 @@ def get_arguments():
 
 
 class ManneTrain:
-    def __init__(self, args, print_summaries=False):
+    def __init__(self, args, print_summaries=True):
         self.print_summaries = print_summaries
         self.train_data = []
         self.val_data = []
@@ -73,6 +70,7 @@ class ManneTrain:
         self.n_epochs = args['n_epochs']
         self.net_type = args['net_type']
         self.skip = args['skip']
+        self.latent_size = args['latent_size']
         self.batch_size = args['batch_size']
         self.train_size = args['train_size']
         self.val_size = args['val_size']
@@ -97,7 +95,7 @@ class ManneTrain:
         skipstr = "skip"
         if not self.skip:
             skipstr = "noskip"
-        self.model_name = f"{self.net_type}_{skipstr}_{splitext(self.filename)[0]}"
+        self.model_name = f"{self.net_type}_{skipstr}_l{self.latent_size}_{splitext(self.filename)[0]}"
         filename = 'frames/' + self.filename
         filepath = join(getcwd(), filename)
         print(f"[ManneTrain] Loading dataset: {filename}")
@@ -128,8 +126,12 @@ class ManneTrain:
             l2_penalty = 1e-7
 
         # 8 Neuron Model from the paper
-        self.encoder_widths = [1024, 512, 256, 128, 64, 32, 16, 8]
-        self.decoder_widths = [16, 32, 64, 128, 256, 512, 1024]
+        first_enc = int(np.log2(self.feature_length)) - 1
+        last_enc = int(np.log2(self.latent_size))
+        self.encoder_widths = [
+            2 ** n for n in range(first_enc, last_enc, -1)] + [self.latent_size]
+        self.decoder_widths = [
+            2 ** (n + 1) for n in range(last_enc, first_enc)]
 
         # Lighter weight model
         # self.encoder_widths = [512,256,128,64,8]

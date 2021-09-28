@@ -7,7 +7,7 @@ from tensorflow.keras.models import load_model
 import tensorflow as tf
 from scipy import signal
 from rtpghi import PGHI
-from manne_dataset import append_augmentations, get_augmentations_from_filename, get_skip_from_filename
+from manne_dataset import append_augmentations, get_augmentations_from_filename, get_skip_from_filename, get_latent_dim_from_filename
 
 RATE = int(44100)
 CHUNK = int(1024)
@@ -17,7 +17,6 @@ class ManneRender():
 
     def __init__(self, model_name, verbose=True):
         self.model_name = model_name
-        self.scales = np.ones(8)
         self.verbose = verbose
         self.load_model()
 
@@ -47,6 +46,10 @@ class ManneRender():
         print(f'[Model] augmentations: {self.model_augmentations}')
         self.model_has_skip = get_skip_from_filename(self.model_name)
         print(f'[Model] skip connections: {self.model_has_skip}')
+
+        self.latent_size = get_latent_dim_from_filename(self.model_name)
+        self.scales = np.ones(self.latent_size)
+        print(f'[Model] latent size: {self.latent_size}')
 
         if print_summary:
             print('\n encoder summary \n')
@@ -101,7 +104,7 @@ class ManneRender():
         mag, phase, remember = self.process_track(track_name)
         print('[Rendering] Start')
         out = self.generate(mag, phase, remember)
-        out = 0.8 * out[3 * CHUNK:]
+        out = out[3 * CHUNK:]
         print(f'[Rendering] Writing {out_file_name}')
         sf.write(out_file_name, out, 44100, subtype='PCM_16')
         print('[Rendering] Done')
@@ -162,7 +165,7 @@ class ManneInterpolator(ManneRender):
             self.rtpghi_start()
         out = self.interpolate(mag_a, phase_a, remember_a,
                                mag_b, phase_b, remember_b, interp, rtpghi)
-        out = 0.8 * out[3 * CHUNK:]
+        out = out[3 * CHUNK:]
         print(f'[Rendering] Writing {out_file_name}')
         sf.write(out_file_name, out, 44100, subtype='PCM_16')
         print('[Rendering] Done')
