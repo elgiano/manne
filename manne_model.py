@@ -18,6 +18,8 @@ class ManneModel():
             self.init_new_model(filenameOrOptions, verbose)
 
     def load_saved_model(self, filename):
+        self.name = basename(filename)
+
         self.network = load_model(filename)
         self.encoder = self.network.get_layer('encoder')
         self.decoder = self.network.get_layer('decoder')
@@ -28,7 +30,6 @@ class ManneModel():
         self.augmentation_size = self.input_size - self.output_size
         self.augmentations = get_augmentations_from_filename(self.name)
 
-        self.name = basename(filename)
 
         self.history = np.load(
             filename + '.training_history.npy', allow_pickle=True)
@@ -43,6 +44,11 @@ class ManneModel():
         if name:
             name += '_'
         np.save(join('models', self.name, f'{name}latents.npy'), latents)
+
+    def load_latents(self, name=''):
+        if name:
+            name += '_'
+        return np.load(join('models', self.name, f'{name}latents.npy'))
 
     def save_history(self, extra={}):
         h = self.network.history.history
