@@ -3,11 +3,11 @@ import numpy as np
 import os
 import librosa
 import soundfile as sf
-from tensorflow.keras.models import load_model
+from manne_model import ManneModel
 import tensorflow as tf
 from scipy import signal
 from rtpghi import PGHI
-from manne_dataset import append_augmentations, get_augmentations_from_filename, get_skip_from_filename, get_latent_dim_from_filename
+from manne_dataset import append_augmentations
 
 RATE = int(44100)
 CHUNK = int(1024)
@@ -34,30 +34,22 @@ class ManneRender():
 
     def load_model(self, print_summary=False):
         print(f'[Model] loading {self.model_name}')
-        data_path_enc = os.path.join(
-            os.getcwd(), self.model_name + '_trained_encoder.h5')
-        self.encoder = load_model(data_path_enc, compile=False)
+        self.model = ManneModel(basename(self.model_name))
 
-        data_path_dec = os.path.join(
-            os.getcwd(), self.model_name + '_trained_decoder.h5')
-        self.decoder = load_model(data_path_dec, compile=False)
         print(f'[Model] loaded {self.model_name}')
-        self.model_augmentations, self.model_num_aug = get_augmentations_from_filename(
-            self.model_name)
+        self.model_augmentations = self.model.augmentations
+        self.model_num_aug = self.model.augmentation_size
+        self.model_has_skip = self.model.skip
+        self.latent_size = self.model.latent_size
         print(
             f'[Model] augmentations ({self.model_num_aug}): {self.model_augmentations}')
-        self.model_has_skip = get_skip_from_filename(self.model_name)
         print(f'[Model] skip connections: {self.model_has_skip}')
-
-        self.latent_size = get_latent_dim_from_filename(self.model_name)
-        self.scales = np.ones(self.latent_size)
         print(f'[Model] latent size: {self.latent_size}')
 
+        self.scales = np.ones(self.latent_size)
+
         if print_summary:
-            print('\n encoder summary \n')
-            self.encoder.summary()
-            print('\n decoder summary \n')
-            self.decoder.summary()
+            self.model.print_summary()
 
     def process_track(self, track_name, augmentations=None):
         print(f'[Track] processing {track_name}')

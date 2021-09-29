@@ -1,7 +1,7 @@
 import pyaudio
 import numpy as np
 import threading
-from time import sleep
+import argparse
 from manne_realtime import ManneMidiThread, OutputFrameBuffer, ManneRealtime
 
 
@@ -102,6 +102,14 @@ class GeneratorThread(threading.Thread):
 
 
 if __name__ == "__main__":
-    m = ManneRealtimeSynth('models/ae_skip_tusk_single_chroma+octave')
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_name', type=str)
+    args = vars(parser.parse_args())
+
+    model_name = args.get(
+        'model_name', 'models/ae_skip_tusk_single_chroma+octave')
+
+    m = ManneRealtimeSynth(model_name)
     print('[ManneRealtime] synth ready')
     m.run_main()

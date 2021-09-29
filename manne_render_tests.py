@@ -2,7 +2,8 @@ from manne_render import ManneInterpolator, ManneSynth, ManneRender
 from os.path import isdir, join, basename, dirname, splitext
 from os import makedirs, listdir
 import numpy as np
-from manne_dataset import get_augmentations_from_filename, get_skip_from_filename, get_latent_dim_from_filename
+import argparse
+from manne_dataset import get_augmentations_from_filename, get_skip_from_filename
 
 
 def get_sources(path):
@@ -134,4 +135,11 @@ def render_tests(model_name, reverse_interpolations=False):
 
 
 if __name__ == '__main__':
-    render_tests('ae_skip_tusk_single_chroma')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('model_name', type=str)
+    args = vars(parser.parse_args())
+
+    model_name = args.get(
+        'model_name', 'models/ae_skip_tusk_single_chroma+octave')
+
+    render_tests(model_name)
