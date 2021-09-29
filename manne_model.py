@@ -60,7 +60,10 @@ class ManneModel():
         np.save(join('models', self.name, 'history.npy'), h)
 
     def load_history(self):
-        return np.load(join('models', self.name, 'history.npy'), allow_pickle=True)
+        h = np.load(join('models', self.name, 'history.npy'), allow_pickle=True)
+        if h.__class__ == np.ndarray and h.dtype == np.object:
+            h = h.item()
+        return h
 
     def init_new_model(self, options, print_summaries=True):
         dataset_name = options.get('dataset_name')
