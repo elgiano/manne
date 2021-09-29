@@ -117,7 +117,7 @@ class ManneModel():
 
         if self.skip is True:
             input_latent = Input(
-                shape=(self.encoder_widths[-1] + self.augmentation_length,))
+                shape=(self.encoder_widths[-1] + self.augmentation_size,))
         else:
             input_latent = Input(shape=(self.encoder_widths[-1],))
 

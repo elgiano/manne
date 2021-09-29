@@ -11,6 +11,7 @@ from tensorflow.keras.callbacks import LambdaCallback
 from manne_model import ManneModel
 from time import time
 
+
 def mse(inputs, outputs):
     return tf.keras.losses.mse(inputs[:, :outputs.shape[1]], outputs)
 
