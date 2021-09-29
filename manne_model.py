@@ -30,9 +30,7 @@ class ManneModel():
         self.augmentation_size = self.input_size - self.output_size
         self.augmentations = get_augmentations_from_filename(self.name)
 
-
-        self.history = np.load(
-            filename + '.training_history.npy', allow_pickle=True)
+        self.history = self.load_history()
 
     def save_model(self, save_history=False):
         self.network.save(join('models', self.name))
@@ -54,6 +52,9 @@ class ManneModel():
         h = self.network.history.history
         h.update(extra)
         np.save(join('models', self.name, 'history.npy'), h)
+
+    def load_history(self):
+        return np.load(join('models', self.name, 'history.npy'), allow_pickle=True)
 
     def init_new_model(self, options, print_summaries=True):
         dataset_name = options.get('dataset_name')
