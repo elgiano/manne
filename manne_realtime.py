@@ -118,7 +118,7 @@ class OutputFrameBuffer():
 class ManneRealtime():
     def __init__(self, model_name, rate=44100, num_channels=2, block_size=4096, wants_inputs=False):
         self.renderer = ManneSynth(model_name, verbose=False)
-        self.rate, self.num_channels = rate, num_channels
+        self.rate, self.num_channels, self.wants_inputs = rate, num_channels, wants_inputs
         self.window_size = 4096
         self.block_size = self.window_size
         # self.block_time = self.block_size / self.rate

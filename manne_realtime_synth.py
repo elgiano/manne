@@ -24,7 +24,7 @@ class ManneRealtimeSynth(ManneRealtime):
         self.gen.set_latents(latents)
         self.gen.set_note(note)
         self.set_amp(amp)
-        out = self.gen.get_audio_block()
+        out = self.gen.out.get_audio_block()
         amp = self._get_updated_amp(len(out))
         out *= amp
         out_frames = (out * 32768).astype(np.int16, order='C')
@@ -77,7 +77,6 @@ class GeneratorThread(threading.Thread):
         chroma = self.chroma
         octave = self.octave
         latents = self._get_updated_latents()
-
         if self.has_skip and self.has_chroma:
             if self.has_octave:
                 out = self.renderer.note(chroma, octave, latents, self.sr,
