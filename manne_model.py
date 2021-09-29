@@ -25,7 +25,7 @@ class ManneModel():
         self.input_size = self.network.input.shape[1]
         self.latent_size = self.encoder.output.shape[1]
         self.output_size = self.network.output.shape[1]
-        self.augmentation_size = self.output_size - self.input_size
+        self.augmentation_size = self.input_size - self.output_size
         self.augmentations = get_augmentations_from_filename(self.name)
 
         self.name = basename(filename)
@@ -54,7 +54,7 @@ class ManneModel():
         self.input_size = options.get('input_size', 2048)
         self.latent_size = options.get('latent_size', 8)
         self.output_size = options.get('output_size', 2048)
-        self.augmentation_size = self.output_size - self.input_size
+        self.augmentation_size = self.input_size - self.output_size
 
         self.net_type = options.get('net_type', 'ae')
         self.skip = options.get('skip', 'false')
