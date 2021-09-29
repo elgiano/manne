@@ -24,6 +24,7 @@ class ManneModel():
         self.encoder = self.network.get_layer('encoder')
         self.decoder = self.network.get_layer('decoder')
 
+        self.net_type = self.name.split('_')[0]
         self.input_size = self.network.input.shape[1]
         self.latent_size = self.encoder.output.shape[1]
         self.output_size = self.network.output.shape[1]
