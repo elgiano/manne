@@ -22,7 +22,10 @@ def get_skip_from_filename(filename):
 
 
 def get_latent_dim_from_filename(filename):
-    return int(splitext(filename)[0].split("_")[2])
+    try:
+        return int(splitext(filename)[0].split("_")[2][1:])
+    except ValueError:
+        return 8
 
 
 class ManneDatasetReader():

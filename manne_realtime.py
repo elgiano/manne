@@ -1,21 +1,26 @@
 import pyaudio
 import numpy as np
 from pyaudio import PyAudio
-from time import sleep, time
-from manne_render import ManneInterpolator, ManneSynth
-from queue import Queue
+from time import time, sleep
+from manne_render import ManneSynth
+from queue import Queue, Empty
 import rtmidi
 import threading
+import librosa
 
 
-class MidiDispatcher(threading.Thread):
-    def __init__(self):
-        super(MidiDispatcher, self).__init__()
+class ManneMidiThread(threading.Thread):
+    def __init__(self, num_latents, min_latent=0, max_latent=1):
+        super(ManneMidiThread, self).__init__()
         self.midiin = rtmidi.MidiIn(name="manne")
         self.midiin.open_virtual_port("manne")
-        self.latents = np.zeros(8)
+        self.latents = np.zeros(num_latents)
+        self.note = 60
+        self.amp = 10
         self._wallclock = time()
         self.queue = Queue()
+        self.latent_range = max_latent - min_latent
+        self.min_latent = min_latent
 
     def __call__(self, event, data=None):
         message, deltatime = event
@@ -36,31 +41,33 @@ class MidiDispatcher(threading.Thread):
             else:
                 type, num, val = event[0]
                 if type == 176:
-                    if num in range(1, 8):
-                        self.latents[num - 1] = val / 127
+                    if num == 1:
+                        self.amp = val / 127 * 100
+                    elif num in range(2, len(self.latents) + 1):
+                        self.latents[num - 2] = val / 127 * \
+                            (self.latent_range) + self.min_latent
+                elif type == 144:
+                    self.note = num
+                    self.amp = val
+                elif type == 128:
+                    self.amp = 0
+                else:
+                    print('[MIDI] unknown event type', type, val)
 
     def get_latents(self):
         return np.copy(self.latents)
 
+    def get_note(self):
+        return self.note
+
+    def get_amp(self):
+        return self.amp
+
+    def get_all_params(self):
+        return np.copy(self.latents), self.note, self.amp
+
     def stop(self):
         self.queue.put(None)
-
-
-class InputFrameBuffer():
-    def __init__(self, fftSize, maxFrames, dtype=np.float32):
-        self.fftSize = fftSize
-        self.buffer = np.zeros(fftSize)
-        self.buffer_free = fftSize
-        self.frames = Queue(maxFrames)
-
-    def put(self, data):
-        if len(data) <= self.buffer_free:
-            self.buffer[self.fftSize - self.buffer_free:] = data
-            self.frames.put(np.copy(self.buffer))
-            self.buffer_free = self.fftSize
-        else:
-            self.put(data[:self.buffer_free])
-            self.put(data[self.buffer_free:])
 
 
 class OutputFrameBuffer():
@@ -69,129 +76,106 @@ class OutputFrameBuffer():
         self.buffer = np.zeros(block_size)
         self.buffer_pos = 0
         self.frames = Queue(maxFrames)
+        self.incomplete_block = None
+        self.last_frame = None
 
-    def get(self, n):
-        out = np.zeros(n)
-        for out_i in range(n):
-            out[out_i] = self.buffer[self.buffer_pos]
-            self.buffer_pos += 1
-            if self.buffer_pos == self.block_size:
-                self.buffer_pos = 0
-                next_frame = self.frames.get()
-                if next_frame:
-                    self.buffer = np.copy(self.frames.get())
-                else:
-                    self.buffer = np.zeros(self.block_size)
-        return out
+    def add_frames(self, frames, fft_hop=2048):
+        if self.last_frame is None:
+            self.last_frame = frames[0]
+        frames = np.vstack(([self.last_frame], frames))
+        audio = np.float32(librosa.istft(
+            frames.T, hop_length=fft_hop))
+        self.add_audio_blocks(audio)
+        self.last_frame = frames[-1]
 
+    def add_audio_blocks(self, audio):
+        blocks = np.split(audio, np.arange(
+            self.block_size, len(audio), self.block_size))
 
-class ManneRealtimeInterpolator():
+        if self.incomplete_block is not None:
+            self.incomplete_block = self.incomplete_block + blocks[0]
+            self.frames.put(self.incomplete_block)
+            self.incomplete_block = None
+            blocks = blocks[1:]
 
-    def __init__(self, model_name, rate=44100, block_size=4096):
-        self.renderer = ManneInterpolator(model_name, verbose=False)
-        print('[ManneRealtime] renderer ready')
-        self.interp = 0.5
-        self.rate = rate
-        self.sample_width = 2
-        self.window_size = 4096 * 8
-        self.block_size = self.window_size
-        self.block_time = self.block_size / self.rate
-        self.num_buffered_windows = 20
-        self.init_audio()
+        if len(audio) % self.block_size != 0:
+            remainder = blocks[-1]
+            self.incomplete_block = np.pad(
+                remainder, (0, self.block_size - len(remainder)))
+            blocks = blocks[:-1]
 
-    def audio_callback(self, in_frames, frame_count, time_info, status_flags):
-        start = time()
-        channels = int(len(in_frames) / (self.sample_width * frame_count))
-        buffer = np.frombuffer(in_frames, dtype=np.int16)
-        buffer = buffer.astype(np.float32, order='C') / 32768.0
-        channels = buffer.reshape(frame_count, channels).transpose()
-        # print(frame_count, buffer.shape)
-        fftTime = time()
-        fft = [self.renderer.process_audio(y) for y in channels]
-        predictTime = time()
-        out = self.renderer.interpolate(*fft[0], *fft[1], self.interp)
-        fftTime = predictTime - fftTime
-        predictTime = time() - predictTime
-        # print(out.shape)
-        # out = channels[0]
-        out_frames = (out * 32768).astype(np.int16, order='C')
-        out_frames = np.repeat(out_frames, 2)
-        # print(frame_count, out.shape)
-        out_frames = out_frames.tobytes()
-        end = time()
-        print(self.block_time, end - start, fftTime, predictTime)
-        return (out_frames, pyaudio.paContinue)
+        for b in blocks:
+            self.frames.put(b)
 
-    def init_audio(self):
-        self.p = PyAudio()
-        self.audio_stream = self.p.open(
-            format=pyaudio.paInt16,
-            channels=2,
-            rate=self.rate,
-            output=True, input=True,
-            frames_per_buffer=self.block_size,
-            stream_callback=self.audio_callback
-        )
+    def get_audio_block(self):
+        try:
+            return self.frames.get_nowait()
+        except Empty:
+            print("Warning: out buffer is empty")
+            return np.zeros(self.block_size)
 
 
-class ManneRealtimeSynth():
-
-    def __init__(self, model_name, rate=44100, block_size=4096):
+class ManneRealtime():
+    def __init__(self, model_name, rate=44100, num_channels=2, block_size=4096, wants_inputs=False):
         self.renderer = ManneSynth(model_name, verbose=False)
-        print('[ManneRealtime] synth ready')
-        self.latent = np.zeros(8)
-        self.rate = rate
-        self.sample_width = 2
+        self.rate, self.num_channels = rate, num_channels
         self.window_size = 4096
         self.block_size = self.window_size
-        self.block_time = self.block_size / self.rate
+        # self.block_time = self.block_size / self.rate
+        self.amp = 10
+        self.new_amp = None
+
+    def _get_updated_amp(self, block_size):
+        if self.new_amp is not None:
+            trans = np.linspace(
+                self.amp, self.new_amp, block_size)
+            self.amp = self.new_amp
+            self.new_amp = None
+            return trans
+        else:
+            return self.amp
+
+    def set_amp(self, new_amp):
+        if new_amp != self.amp:
+            self.new_amp = new_amp
 
     def start(self):
+        self.start_generator()
         self.init_audio()
-        self.midi = MidiDispatcher()
-        self.midi.start()
+        self.start_midi()
 
     def stop(self):
+        self.gen.stop()
         self.midi.stop()
         self.midi.join()
 
-    def audio_callback(self, in_frames, frame_count, time_info, status_flags):
-        start = time()
-        latents = self.midi.get_latents() * \
-            np.ones((self.block_size // self.window_size * 2, 8))
-        # print(latents)
-        out = self.renderer.decode(latents, self.rate, self.window_size)
-        predictTime = time() - start
-        # print(out.shape)
-        # out = channels[0]
-        out_frames = (out * 32768).astype(np.int16, order='C')
-        out_frames = np.repeat(out_frames, 2)
-        # print(frame_count, out.shape)
-        out_frames = out_frames.tobytes()
-        end = time()
-        #print(self.block_time, end - start, predictTime)
-        return (out_frames, pyaudio.paContinue)
-
     def init_audio(self):
         self.p = PyAudio()
         self.audio_stream = self.p.open(
             format=pyaudio.paInt16,
-            channels=2,
+            channels=self.num_channels,
             rate=self.rate,
-            output=True, input=False,
+            output=True, input=self.wants_inputs,
             frames_per_buffer=self.block_size,
             stream_callback=self.audio_callback
         )
 
+    def run_main(self):
+        try:
+            self.start()
+            while True:
+                sleep(1)
+        except KeyboardInterrupt:
+            self.stop()
+            print('')
+        finally:
+            print("Exit.")
 
-# m = ManneRealtimeInterpolator('models/vae_tusk')
-m = ManneRealtimeSynth('models/vae_tusk')
-try:
-    m.start()
-    while True:
-        sleep(1)
-except KeyboardInterrupt:
-    m.stop()
-    print('')
-finally:
-    print("Exit.")
+    def start_generator(self):
+        pass
+
+    def start_midi(self):
+        pass
+
+    def audio_callback(self, in_frames, frame_count, time_info, status_flags):
+        pass

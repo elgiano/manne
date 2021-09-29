@@ -18,6 +18,7 @@ class ManneRender():
     def __init__(self, model_name, verbose=True):
         self.model_name = model_name
         self.verbose = verbose
+        self.rtpghi = None
         self.load_model()
 
     def log(self, *data):
@@ -43,7 +44,8 @@ class ManneRender():
         print(f'[Model] loaded {self.model_name}')
         self.model_augmentations, self.model_num_aug = get_augmentations_from_filename(
             self.model_name)
-        print(f'[Model] augmentations: {self.model_augmentations}')
+        print(
+            f'[Model] augmentations ({self.model_num_aug}): {self.model_augmentations}')
         self.model_has_skip = get_skip_from_filename(self.model_name)
         print(f'[Model] skip connections: {self.model_has_skip}')
 
@@ -84,7 +86,6 @@ class ManneRender():
 
     def generate(self, mag, phase, remember, scales=None):
         scales = scales or self.scales
-        print(mag)
         enc_mag = self.encoder.predict(mag)
         enc_mag = enc_mag * scales  # NEED TO ADD SCALE HERE
         if self.model_has_skip:
@@ -173,34 +174,41 @@ class ManneInterpolator(ManneRender):
 
 class ManneSynth(ManneRender):
 
-    def decode(self, latent, sr, fft_size, fft_hop, rtpghi=False):
+    def decode(self, latent, sr, fft_size, fft_hop, rtpghi=False, istft=True):
         out_mag = self.decoder.predict(latent)
         out_mag = np.hstack((out_mag, np.zeros((len(out_mag), 1))))
         out_phase = self.get_phase(out_mag.T, rtpghi).T
         E = out_mag * np.exp(1j * out_phase)
-        out = np.float32(librosa.istft(
-            E.T, hop_length=fft_hop, win_length=fft_size))
-        # out = np.float32(signal.istft(
-        #     E.T, fs=sr, nfft=fft_size, noverlap=fft_hop))
-        return out
+        if istft:
+            return np.float32(librosa.istft(
+                E.T, hop_length=fft_hop, center=True))
+        return E
 
-    def chroma(self, chroma, latent, sr, fft_size, fft_hop, rtpghi=False):
+    def chroma(self, chroma, latent, sr, fft_size, fft_hop, rtpghi=False, istft=True):
         chroma_vec = np.zeros((len(latent), 12))
         chroma_vec[:, chroma] = 1
         latent = np.hstack((latent, chroma_vec))
         return self.decode(latent, sr, fft_size, fft_hop, rtpghi)
 
-    def note(self, chroma, octave, latent, sr, fft_size, fft_hop, rtpghi=False):
+    def note(self, chroma, octave, latent, sr, fft_size, fft_hop, rtpghi=False, istft=True):
         chroma_vec = np.zeros((len(latent), 12))
         chroma_vec[:, chroma] = 1
         octave_vec = np.zeros((len(latent), 8))
         octave_vec[:, octave] = 1
         latent = np.hstack((latent, chroma_vec, octave_vec))
-        return self.decode(latent, sr, fft_size, fft_hop, rtpghi)
+        return self.decode(latent, sr, fft_size, fft_hop, rtpghi, istft)
 
     def render_note(self, out_file_name, chroma, octave, latent, sr, fft_size, fft_hop, rtpghi=False):
         self.rtpghi_start()
         out = self.note(chroma, octave, latent, sr, fft_size, fft_hop, rtpghi)
+        out = 2 * out[3 * CHUNK:]
+        print(f'[Rendering] Writing {out_file_name}')
+        sf.write(out_file_name, out, sr, subtype='PCM_16')
+        print('[Rendering] Done')
+
+    def render_chroma(self, out_file_name, chroma, latent, sr, fft_size, fft_hop, rtpghi=False):
+        self.rtpghi_start()
+        out = self.chroma(chroma, latent, sr, fft_size, fft_hop, rtpghi)
         out = 2 * out[3 * CHUNK:]
         print(f'[Rendering] Writing {out_file_name}')
         sf.write(out_file_name, out, sr, subtype='PCM_16')

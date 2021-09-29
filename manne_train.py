@@ -45,13 +45,13 @@ def get_arguments():
     parser.add_argument('filename', type=str)
     parser.add_argument('--net_type', type=str, default='ae')
     parser.add_argument('--mode', type=str, default='train')
-    parser.add_argument('--distribute', type=bool, default=False)
     parser.add_argument('--n_epochs', type=int, default=5)
     parser.add_argument('--latent_size', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=200)
     parser.add_argument('--train_size', type=float, default=0.8)
     parser.add_argument('--val_size', type=float, default=0.1)
     parser.add_argument('--skip', action="store_true")
+    parser.add_argument('--distribute', action="store_true")
     return parser.parse_args()
 
 
@@ -243,20 +243,20 @@ class ManneTrain:
             beta_changer = LambdaCallback(on_epoch_end=change_params)
             self.network.compile(optimizer=Adam(
                 learning_rate=adam_rate), loss=negative_log_likelihood, metrics=[mse])
-            self.network.fit(self.train_data,
-                             epochs=self.n_epochs,
-                             validation_data=self.val_data,
-                             callbacks=[beta_changer]
-                             )
+            h = self.network.fit(self.train_data,
+                                 epochs=self.n_epochs,
+                                 validation_data=self.val_data,
+                                 callbacks=[beta_changer]
+                                 )
         else:
             alpha_changer = LambdaCallback(on_epoch_end=change_params)
             self.network.compile(optimizer=Adam(
                 learning_rate=adam_rate), loss=mse, metrics=[mse])
-            self.network.fit(self.train_data,
-                             epochs=self.n_epochs,
-                             validation_data=self.val_data,
-                             callbacks=[alpha_changer]
-                             )
+            h = self.network.fit(self.train_data,
+                                 epochs=self.n_epochs,
+                                 validation_data=self.val_data,
+                                 callbacks=[alpha_changer]
+                                 )
         self.encoder.save(f'models/{self.model_name}_trained_encoder')
         self.decoder.save(f'models/{self.model_name}_trained_decoder')
 
