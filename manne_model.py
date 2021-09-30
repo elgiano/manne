@@ -1,3 +1,4 @@
+import timeit
 from manne_dataset import get_augmentations_from_filename
 import numpy as np
 import tensorflow as tf
@@ -60,7 +61,8 @@ class ManneModel():
         np.save(join('models', self.name, 'history.npy'), h)
 
     def load_history(self):
-        h = np.load(join('models', self.name, 'history.npy'), allow_pickle=True)
+        h = np.load(join('models', self.name, 'history.npy'),
+                    allow_pickle=True)
         if h.__class__ == np.ndarray and h.dtype == np.object:
             h = h.item()
         return h
@@ -183,14 +185,58 @@ class ManneModel():
         print('\n decoder summary \n')
         self.decoder.summary()
 
-    def predict(self, inputs):
+    def predict(self, inputs, verbose=0):
         if self.net_type == 'vae':
             return self.network.network(inputs).sample()
         else:
-            return self.network.predict(inputs, verbose=1)
+            return self.network.predict(inputs)
 
     def encode(self, inputs):
         return self.encoder.predict(inputs)
 
     def decode(self, latents):
         return self.decoder.predict(latents)
+
+    def benchmark(self):
+        results = []
+
+        def random_input(len):
+            if self.skip:
+                return [np.random.rand(len, self.input_size), np.random.rand(len, self.augmentation_size)]
+            else:
+                return np.random.rand(len, self.input_size)
+
+        def random_latent(len):
+            if self.skip:
+                return np.random.rand(len, self.latent_size + self.augmentation_size)
+            else:
+                return np.random.rand(len, self.latent_size)
+
+        self.encode(np.random.rand(1, self.input_size))
+
+        for n in [1, 10, 100]:
+            print(f"Encoder: timing {n} frame")
+            res = timeit.repeat(lambda: self.encode(
+                np.random.rand(n, self.input_size)), number=10, repeat=5)
+            w = max(res) / 10
+            v = (max(res) - min(res)) / 10
+            print(f"Slowest: {w}")
+            results += [(res, v)]
+
+            print(f"Decoder: timing {n} frame")
+            res = timeit.repeat(lambda: self.decode(
+                random_latent(n)), number=10, repeat=5)
+            w = max(res) / 10
+            v = (max(res) - min(res)) / 10
+            print(f"Slowest: {w}")
+            results += [(res, v)]
+
+            print(f"Network: timing {n} frame")
+            res = timeit.repeat(lambda: self.predict(
+                random_input(n)), number=10, repeat=5)
+            w = max(res) / 10
+            v = (max(res) - min(res)) / 10
+            print(f"Slowest: {w}")
+            results += [(res, v)]
+
+        return results
