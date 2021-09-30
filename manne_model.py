@@ -218,7 +218,7 @@ class ManneModel():
             res = timeit.repeat(lambda: self.encode(
                 np.random.rand(n, self.input_size)), number=10, repeat=5)
             w = max(res) / 10
-            v = (min(res) - max(res)) / 10
+            v = (max(res) - min(res)) / 10
             if verbose:
                 print(f"Encoder: timing {n} frames")
                 print(f"Slowest: {w}")
@@ -227,7 +227,7 @@ class ManneModel():
             res = timeit.repeat(lambda: self.decode(
                 random_latent(n)), number=10, repeat=5)
             w = max(res) / 10
-            v = (min(res) - max(res)) / 10
+            v = (max(res) - min(res)) / 10
             if verbose:
                 print(f"Decoder: timing {n} frames")
                 print(f"Slowest: {w}")
@@ -236,7 +236,7 @@ class ManneModel():
             res = timeit.repeat(lambda: self.predict(
                 random_input(n)), number=10, repeat=5)
             w = max(res) / 10
-            v = (min(res) - max(res)) / 10
+            v = (max(res) - min(res)) / 10
             if verbose:
                 print(f"Autoencoding: timing {n} frames")
                 print(f"Slowest: {w}")
