@@ -197,7 +197,7 @@ class ManneModel():
     def decode(self, latents):
         return self.decoder.predict(latents)
 
-    def benchmark(self):
+    def benchmark(self, verbose=True):
         results = []
 
         def random_input(len):
@@ -215,28 +215,31 @@ class ManneModel():
         self.encode(np.random.rand(1, self.input_size))
 
         for n in [1, 10, 100]:
-            print(f"Encoder: timing {n} frame")
             res = timeit.repeat(lambda: self.encode(
                 np.random.rand(n, self.input_size)), number=10, repeat=5)
             w = max(res) / 10
-            v = (max(res) - min(res)) / 10
-            print(f"Slowest: {w}")
-            results += [(res, v)]
+            v = (w - min(res)) / 10
+            if verbose:
+                print(f"Encoder: timing {n} frames")
+                print(f"Slowest: {w}")
+            results += [(w, v)]
 
-            print(f"Decoder: timing {n} frame")
             res = timeit.repeat(lambda: self.decode(
                 random_latent(n)), number=10, repeat=5)
             w = max(res) / 10
-            v = (max(res) - min(res)) / 10
-            print(f"Slowest: {w}")
-            results += [(res, v)]
+            v = (w - min(res)) / 10
+            if verbose:
+                print(f"Decoder: timing {n} frames")
+                print(f"Slowest: {w}")
+            results += [(w, v)]
 
-            print(f"Network: timing {n} frame")
             res = timeit.repeat(lambda: self.predict(
                 random_input(n)), number=10, repeat=5)
             w = max(res) / 10
-            v = (max(res) - min(res)) / 10
-            print(f"Slowest: {w}")
-            results += [(res, v)]
+            v = (w - min(res)) / 10
+            if verbose:
+                print(f"Autoencoding: timing {n} frames")
+                print(f"Slowest: {w}")
+            results += [(w, v)]
 
         return results
