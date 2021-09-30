@@ -4,8 +4,10 @@ frames/*.npy
 frames/*.tfrecords
 frames/*.tfrecords.meta
 models/**
-renders/**
 models/*.h5
+renders/**
+build_model*
+build_models
 __pycache__
 *.pdf
 *.csv

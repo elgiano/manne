@@ -134,6 +134,56 @@ def render_tests(model_name, reverse_interpolations=False):
     #     render_test_sequences(model_name, test_result, dur)
 
 
+def render_test_line(model_name):
+    print("[TestRender] Eval line", model_name)
+    m = ManneSynth(join('models', model_name))
+    outdir = join('renders', 'eval-line')
+    outname = join(outdir, model_name + ".wav")
+    if not isdir(outdir):
+        makedirs(outdir)
+
+    sr = 44100
+    fft_size = 4096
+    fft_hop = 1024
+    dur = 30
+    frames = dur * sr // fft_hop
+    latent = np.linspace(np.zeros(m.model.latent_size),
+                         np.ones(m.model.latent_size), frames)
+    if m.model_has_skip:
+        if 'octave' in m.model_augmentations:
+            print('note')
+            m.render_note(outname, 7, 4, latent, sr, fft_size, fft_hop, False)
+        else:
+            print('chroma')
+            m.render_chroma(outname, 7, latent, sr, fft_size, fft_hop, False)
+    else:
+        m.render(outname, latent, sr, fft_size, fft_hop, False)
+
+
+def render_test_scale(model_name):
+    print("[TestRender] Eval line", model_name)
+    m = ManneSynth(join('models', model_name))
+    outdir = join('renders', 'eval-scale')
+    outname = join(outdir, model_name + ".wav")
+    if not isdir(outdir):
+        makedirs(outdir)
+
+    sr = 44100
+    fft_size = 4096
+    fft_hop = 1024
+    note_dur = 2
+    note_frames = note_dur * sr // fft_hop
+    if m.model_has_skip:
+        if 'octave' in m.model_augmentations:
+            m.render_chromatic_line(
+                outname, sr, fft_size, fft_hop, False, note_frames)
+        else:
+            m.render_chromaline(outname, sr, fft_size,
+                                fft_hop, False, note_frames)
+    else:
+        print('Model has no skip_connection. Skipping (haha)')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('model_name', type=str)

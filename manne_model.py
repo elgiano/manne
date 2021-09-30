@@ -35,7 +35,7 @@ class ManneModel():
         self.latent_size = self.encoder.output.shape[1]
         self.output_size = self.network.output.shape[1]
         self.augmentation_size = self.input_size - self.output_size
-        self.augmentations = get_augmentations_from_filename(self.name)
+        self.augmentations = get_augmentations_from_filename(self.name)[0]
 
         self.history = self.load_history()
 

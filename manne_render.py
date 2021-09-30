@@ -199,6 +199,14 @@ class ManneSynth(ManneRender):
         sf.write(out_file_name, out, sr, subtype='PCM_16')
         print('[Rendering] Done')
 
+    def render(self, out_file_name, latent, sr, fft_size, fft_hop, rtpghi=False):
+        # self.rtpghi_start()
+        out = self.decode(latent, sr, fft_size, fft_hop, rtpghi)
+        out = 2 * out[3 * CHUNK:]
+        print(f'[Rendering] Writing {out_file_name}')
+        sf.write(out_file_name, out, sr, subtype='PCM_16')
+        print('[Rendering] Done')
+
     def render_chroma(self, out_file_name, chroma, latent, sr, fft_size, fft_hop, rtpghi=False):
         self.rtpghi_start()
         out = self.chroma(chroma, latent, sr, fft_size, fft_hop, rtpghi)
@@ -207,20 +215,37 @@ class ManneSynth(ManneRender):
         sf.write(out_file_name, out, sr, subtype='PCM_16')
         print('[Rendering] Done')
 
-    def render_chromatic_line(self, out_file_name, sr, fft_size, fft_hop, rtpghi=False, dur=60):
-        self.rtpghi_start()
-        note_samples = int(sr * dur / (12 * 8))
-        chromatic = ['c', 'c#', 'd', 'd#', 'e',
-                     'f', 'f#', 'g', 'g#', 'a', 'a#', 'b']
+    def render_chromaline(self, out_file_name, sr, fft_size, fft_hop, rtpghi=False, note_frames=10):
+        latent = None
+        for chroma in range(12):
+            chroma_vec = np.zeros((note_frames, 12))
+            chroma_vec[:, chroma] = 1
+            note_noise = np.ones((note_frames, self.latent_size)) * 0.5
+            note_noise += np.random.rand(note_frames,
+                                         self.latent_size) * 0.02 - 0.01
+            note_latent = np.hstack((note_noise, chroma_vec))
+            if latent is None:
+                latent = note_latent
+            else:
+                latent = np.vstack((latent, note_latent))
+
+        out = self.decode(latent, sr, fft_size, fft_hop, rtpghi)
+        out = 2 * out[3 * CHUNK:]
+        print(f'[Rendering] Writing {out_file_name}')
+        sf.write(out_file_name, out, sr, subtype='PCM_16')
+        print('[Rendering] Done')
+
+    def render_chromatic_line(self, out_file_name, sr, fft_size, fft_hop, rtpghi=False, note_frames=10):
         latent = None
         for octave in range(8):
-            octave_vec = np.zeros((note_samples, 8))
+            octave_vec = np.zeros((note_frames, 8))
             octave_vec[:, octave] = 1
-            for (chroma, name) in enumerate(chromatic):
-                chroma_vec = np.zeros((note_samples, 12))
+            for chroma in range(12):
+                chroma_vec = np.zeros((note_frames, 12))
                 chroma_vec[:, chroma] = 1
-                note_noise = np.linspace(np.random.rand(
-                    8), np.random.rand(8), note_samples)
+                note_noise = np.ones((note_frames, self.latent_size)) * 0.5
+                # note_noise += np.random.rand(note_frames,
+                #                              self.latent_size) * 0.02 - 0.01
                 note_latent = np.hstack((note_noise, chroma_vec, octave_vec))
                 if latent is None:
                     latent = note_latent
