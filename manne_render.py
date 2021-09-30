@@ -34,12 +34,13 @@ class ManneRender():
 
     def load_model(self, print_summary=False):
         print(f'[Model] loading {self.model_name}')
-        self.model = ManneModel(basename(self.model_name))
+        self.model = ManneModel(self.model_name)
 
         print(f'[Model] loaded {self.model_name}')
         self.model_augmentations = self.model.augmentations
         self.model_num_aug = self.model.augmentation_size
         self.model_has_skip = self.model.skip
+
         self.latent_size = self.model.latent_size
         print(
             f'[Model] augmentations ({self.model_num_aug}): {self.model_augmentations}')
@@ -78,13 +79,13 @@ class ManneRender():
 
     def generate(self, mag, phase, remember, scales=None):
         scales = scales or self.scales
-        enc_mag = self.encoder.predict(mag)
+        enc_mag = self.model.encode(mag)
         enc_mag = enc_mag * scales  # NEED TO ADD SCALE HERE
         if self.model_has_skip:
-            out_mag = self.decoder.predict(
+            out_mag = self.model.decode(
                 np.hstack((enc_mag, mag[:, -self.model_num_aug:])))
         else:
-            out_mag = self.decoder.predict(enc_mag)
+            out_mag = self.model.decode(enc_mag)
         # reappend nyquist bin after prediction
         out_mag = np.hstack((out_mag, np.zeros((len(out_mag), 1))))
         out_mag = out_mag.T * remember
@@ -128,17 +129,17 @@ class ManneInterpolator(ManneRender):
     def interpolate(self, mag_a, phase_a, remember_a, mag_b, phase_b, remember_b, interp=0.5, rtpghi=None):
 
         self.log('[Interpolate] encoding file 1')
-        enc_mag = self.encoder.predict(mag_a)
+        enc_mag = self.model.encode(mag_a)
         self.log('[Interpolate] encoding file 2')
-        enc_mag2 = self.encoder.predict(mag_b)
+        enc_mag2 = self.model.encode(mag_b)
         enc_mag2 = self.wrap_extend(enc_mag2, len(enc_mag))
         enc_mag_interp = (1 - interp) * enc_mag + interp * enc_mag2
         self.log('[Interpolate] decoding')
         if self.model_has_skip:
-            out_mag = self.decoder.predict(
+            out_mag = self.model.decode(
                 np.hstack((enc_mag_interp, mag_a[:, -self.model_num_aug:])))
         else:
-            out_mag = self.decoder.predict(enc_mag_interp)
+            out_mag = self.model.decode(enc_mag_interp)
         out_mag = np.hstack((out_mag, np.zeros((len(out_mag), 1))))
         out_mag = out_mag.T * remember_a
         if rtpghi is None:
@@ -167,7 +168,7 @@ class ManneInterpolator(ManneRender):
 class ManneSynth(ManneRender):
 
     def decode(self, latent, sr, fft_size, fft_hop, rtpghi=False, istft=True):
-        out_mag = self.decoder.predict(latent)
+        out_mag = self.model.decode(latent)
         out_mag = np.hstack((out_mag, np.zeros((len(out_mag), 1))))
         out_phase = self.get_phase(out_mag.T, rtpghi).T
         E = out_mag * np.exp(1j * out_phase)
