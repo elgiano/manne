@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras.layers import Input, Dense, LeakyReLU, Concatenate
 from tensorflow.keras.regularizers import l2
-from tensorflow.keras.models import Model, load_model, save_model
+from tensorflow.keras.models import Model, load_model
 from os.path import join, basename
 import tensorflow_probability as tfp
 tfd = tfp.distributions
@@ -61,11 +61,14 @@ class ManneModel():
         np.save(join('models', self.name, 'history.npy'), h)
 
     def load_history(self):
-        h = np.load(join('models', self.name, 'history.npy'),
-                    allow_pickle=True)
-        if h.__class__ == np.ndarray and h.dtype == np.object:
-            h = h.item()
-        return h
+        try:
+            h = np.load(join('models', self.name, 'history.npy'),
+                        allow_pickle=True)
+            if h.__class__ == np.ndarray and h.dtype == np.object:
+                h = h.item()
+            return h
+        except:
+            print(f'Model training history not found')
 
     def init_new_model(self, options, print_summaries=True):
         dataset_name = options.get('dataset_name')
@@ -235,6 +238,100 @@ class ManneModel():
 
             res = timeit.repeat(lambda: self.predict(
                 random_input(n)), number=10, repeat=5)
+            w = max(res) / 10
+            v = (max(res) - min(res)) / 10
+            if verbose:
+                print(f"Autoencoding: timing {n} frames")
+                print(f"Slowest: {w}")
+            results += [(w, v)]
+
+        return results
+
+
+class ManneModelLite:
+    def __init__(self, model_path):
+        self.model = ManneModel(model_path)
+        print('Converting to tflite')
+        self.autoencoder, self.encoder, self.decoder = [
+            self.convert_model(net) for net in (self.model.network, self.model.encoder, self.model.decoder)]
+
+        self.input_size = self.encoder['input_shape'][1]
+        self.latent_size = self.encoder['output_shape'][1]
+        self.decoder_input_size = self.decoder['input_shape'][1]
+        self.output_size = self.decoder['output_shape'][1]
+        self.augmentation_size = self.input_size - self.output_size
+
+    def convert_model(self, model):
+        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        tflite_model = converter.convert()
+        interpreter = tf.lite.Interpreter(model_content=tflite_model)
+        interpreter.allocate_tensors()
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        input_shape = input_details[0]['shape']
+        output_shape = output_details[0]['shape']
+        input_index = input_details[0]['index']
+        output_index = output_details[0]['index']
+        return {
+            'interpreter': interpreter, 'input_shape': input_shape, 'output_shape': output_shape,
+            'input_index': input_index, 'output_index': output_index
+        }
+
+    def run_model(self, model, input):
+        if input.ndim > 1 and input.shape[0] > 1:
+            return self.run_model_multiple(model, input)
+
+        model['interpreter'].set_tensor(model['input_index'], input)
+        return model['interpreter'].get_tensor(model['output_index'])
+
+    def run_model_multiple(self, model, input):
+        return np.array([self.run_model(model, np.array([x])) for x in input])
+
+    def reconstruct(self, input):
+        return self.run_model(self.autoencoder, input)
+
+    def decode(self, input):
+        return self.run_model(self.decoder, input)
+
+    def encode(self, input):
+        return self.run_model(self.encoder, input)
+
+    def benchmark(self, verbose=True):
+        results = []
+
+        def random_encode(len):
+            self.encode(np.random.rand(
+                    len, self.input_size).astype(np.float32))
+
+        def random_reconstruct(len):
+            self.reconstruct(np.random.rand(
+                    len, self.input_size).astype(np.float32))
+
+        def random_decode(len):
+            self.decode(np.random.rand(
+                    len, self.decoder_input_size).astype(np.float32))
+
+        self.encode(np.random.rand(1, self.input_size).astype(np.float32))
+
+        for n in [1, 10, 100]:
+            res = timeit.repeat(lambda: random_encode(n), number=10, repeat=5)
+            w = max(res) / 10
+            v = (max(res) - min(res)) / 10
+            if verbose:
+                print(f"Encoder: timing {n} frames")
+                print(f"Slowest: {w}")
+            results += [(w, v)]
+
+            res = timeit.repeat(lambda: random_decode(n), number=10, repeat=5)
+            w = max(res) / 10
+            v = (max(res) - min(res)) / 10
+            if verbose:
+                print(f"Decoder: timing {n} frames")
+                print(f"Slowest: {w}")
+            results += [(w, v)]
+
+            res = timeit.repeat(
+                lambda: random_reconstruct(n), number=10, repeat=5)
             w = max(res) / 10
             v = (max(res) - min(res)) / 10
             if verbose:
