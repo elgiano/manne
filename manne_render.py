@@ -3,7 +3,7 @@ import numpy as np
 import os
 import librosa
 import soundfile as sf
-from manne_model import ManneModel
+from manne_model import ManneModel, ManneModelLite, load_saved_model
 import tensorflow as tf
 from scipy import signal
 from rtpghi import PGHI
@@ -15,11 +15,11 @@ CHUNK = int(1024)
 
 class ManneRender():
 
-    def __init__(self, model_name, verbose=True):
+    def __init__(self, model_name, verbose=True, lite=True):
         self.model_name = model_name
         self.verbose = verbose
         self.rtpghi = None
-        self.load_model()
+        self.load_model(lite=lite)
 
     def log(self, *data):
         if self.verbose:
@@ -32,9 +32,13 @@ class ManneRender():
         epsilon = tf.keras.backend.random_normal(shape=(batch, dim))
         return self.z_mean + tf.keras.backend.exp(0.5 * self.z_log_var) * epsilon
 
-    def load_model(self, print_summary=False):
+    def load_model(self, print_summary=False, lite=False):
         print(f'[Model] loading {self.model_name}')
-        self.model = ManneModel(self.model_name)
+        if lite:
+            self.model = ManneModelLite(self.model_name)
+        else:
+            load_saved_model(self.model_name)
+            # self.model = ManneModel(self.model_name)
 
         print(f'[Model] loaded {self.model_name}')
         self.model_augmentations = self.model.augmentations

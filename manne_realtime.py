@@ -116,11 +116,11 @@ class OutputFrameBuffer():
 
 
 class ManneRealtime():
-    def __init__(self, model_name, rate=44100, num_channels=2, block_size=4096, wants_inputs=False):
+    def __init__(self, model_name, rate=44100, num_channels=2, fft_size=4096, block_size=2048, wants_inputs=False):
         self.renderer = ManneSynth(model_name, verbose=False)
         self.rate, self.num_channels, self.wants_inputs = rate, num_channels, wants_inputs
-        self.window_size = 4096
-        self.block_size = self.window_size
+        self.window_size = fft_size
+        self.block_size = block_size
         # self.block_time = self.block_size / self.rate
         self.amp = 10
         self.new_amp = None
@@ -140,11 +140,12 @@ class ManneRealtime():
             self.new_amp = new_amp
 
     def start(self):
+        self.start_midi()
         self.start_generator()
         self.init_audio()
-        self.start_midi()
 
     def stop(self):
+        self.audio_stream.close()
         self.gen.stop()
         self.midi.stop()
         self.midi.join()
