@@ -351,7 +351,8 @@ if __name__ == '__main__':
         'num_bins': args.fft_size // 2,
         'hop': args.fft_hop,
         "augmentations": augmentations,
-        "cqt_bins_per_octave": args.cqt_bins_per_octave
+        "cqt_bins_per_octave": args.cqt_bins_per_octave,
+        "normalize": args.normalize
     })
 
 # import tensorflow as tf
