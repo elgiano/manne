@@ -1,4 +1,4 @@
-from manne_dataset import ManneDatasetReader
+from manne_dataset import ManneDataset
 import argparse
 from os.path import join
 from os import getcwd
@@ -14,6 +14,11 @@ from time import time
 
 def mse(inputs, outputs):
     return tf.keras.losses.mse(inputs[:, :outputs.shape[1]], outputs)
+
+
+def sse(inputs, outputs):
+    diff = (inputs[:, :outputs.shape[1]] - outputs) ** 2
+    return diff.sum(axis=-1)
 
 
 class ManneTrain:
@@ -52,25 +57,29 @@ class ManneTrain:
     # DATASET
 
     def load_dataset(self, filename, skip_connection):
-        filepath = join(getcwd(), 'frames', filename) + '.npy'
+        # filepath = join(getcwd(), 'frames', filename)
         print(f"[ManneTrain] Loading dataset: {filename}")
-        dataset_reader = ManneDatasetReader(filepath, skip_connection)
-        self.input_size = dataset_reader.feature_size
-        self.augmentation_length = dataset_reader.augmentation_size
+        dataset = ManneDataset(filename)
+        self.input_size = dataset.feature_size
+        self.augmentation_length = dataset.augmentations_size
         self.output_size = self.input_size - self.augmentation_length
         self.fft_size = (self.output_size - 1) * 2
         print(f"fftSize: {self.fft_size}")
         print(
-            f"frames: {dataset_reader.dataset_size} (size: {dataset_reader.feature_size})")
+            f"frames: {dataset.dataset_size} (size: {dataset.feature_size})")
         print(
-            f"augmentations: {dataset_reader.augmentations} (size: {dataset_reader.augmentation_size})")
+            f"augmentations: {dataset.augmentations} (size: {dataset.augmentations_size})")
 
-        (train, val, test) = dataset_reader.get_splits(
+        (train_data, val_data, test_data) = dataset.get_splits(
             self.train_size, self.val_size, self.batch_size)
-        self.train_data = train
-        self.val_data = val
-        self.test_data = test
+        self.train_data = self.data_to_dataset(train_data)
+        self.val_data = self.data_to_dataset(val_data)
+        self.test_data = self.data_to_dataset(test_data)
 
+    def data_to_dataset(self, data):
+        dataset = tf.data.Dataset.from_tensor_slices(data)
+        dataset = tf.data.Dataset.zip((dataset, dataset))
+        return dataset.batch(self.batch_size)
     # TRAINING
 
     def compile_model(self):
@@ -106,6 +115,14 @@ class ManneTrain:
         #     save_weights_only=False,
         #     save_best_only=True,
         # )
+
+        wsse_weights = np.arange(
+            2, self.output_size + 1) / np.arange(1, self.output_size) - 1
+        wsse_weights = np.hstack((1, wsse_weights))
+
+        def wsse(inputs, outputs):
+            diff = (inputs[:, :outputs.shape[1]] - outputs) ** 2
+            return np.dot(diff, wsse_weights)
 
         # on_epoch_end callback for training
         alpha = tf.Variable(0.3)
@@ -161,27 +178,22 @@ class ManneTrain:
         valset_eval_in = self.get_samples(self.val_data, num_plots)
         testset_eval_in = self.get_samples(self.test_data, num_plots)
 
-        valset_eval = self.model.predict(valset_eval_in)
-        testset_eval = self.model.predict(testset_eval_in)
+        valset_eval = self.model.reconstruct(valset_eval_in)
+        testset_eval = self.model.reconstruct(testset_eval_in)
 
         print('Printing PDFs')
         self.plot_pdf('val', valset_eval_in, valset_eval, val_metrics)
         self.plot_pdf('test', testset_eval_in, testset_eval, test_metrics)
 
     def get_samples(self, dataset, n):
-        dataset = dataset.unbatch()
-        dataset = dataset.shuffle(dataset.cardinality().numpy())
-        dataset = dataset.take(n)
+        dataset = list(dataset.unbatch())
+        np.random.shuffle(dataset)
+        samples = np.array(dataset[:n])[:, 0]
         if self.skip is True:
             # separate inputs
-            samples_x = list(dataset.map(
-                lambda i, o: i[0]).as_numpy_iterator())
-            samples_a = list(dataset.map(
-                lambda i, o: i[1]).as_numpy_iterator())
-            return [np.array(samples_x), np.array(samples_a)]
+            return [samples[:, 0], samples[:, 1]]
         else:
-            samples = list(dataset.map(lambda i, o: i).as_numpy_iterator())
-            return np.array(samples)
+            return samples
 
     def plot_pdf(self, pdf_name, original, predicted, note):
         if self.skip is True:

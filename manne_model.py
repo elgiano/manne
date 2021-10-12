@@ -5,10 +5,18 @@ import tensorflow as tf
 from tensorflow.keras.layers import Input, Dense, LeakyReLU, Concatenate
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.models import Model, load_model
-from os.path import join, basename
+from os import makedirs
+from os.path import join, basename, isdir, splitext
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfpl = tfp.layers
+
+
+def load_saved_model(keras_or_tflite_path):
+    if keras_or_tflite_path.endswith('tflite'):
+        return ManneModelLite(keras_or_tflite_path)
+    else:
+        return ManneModel(keras_or_tflite_path)
 
 
 class ManneModel():
@@ -19,7 +27,7 @@ class ManneModel():
             self.init_new_model(filenameOrOptions, verbose)
 
     def load_saved_model(self, filename):
-        self.name = basename(filename)
+        self.name = splitext(basename(filename))[0]
 
         self.network = load_model(filename)
         self.encoder = self.network.get_layer('encoder')
@@ -83,7 +91,7 @@ class ManneModel():
         self.define_net(print_summaries)
 
         skip = ['noskip', 'skip'][self.skip]
-        self.name = f'{self.net_type}_{skip}_l{self.latent_size}_{dataset_name}'
+        self.name = f'{self.net_type}_{skip}_l{self.latent_size}_{splitext(basename(dataset_name))[0]}'
 
     def define_net(self, print_summaries=True):
 
@@ -188,7 +196,7 @@ class ManneModel():
         print('\n decoder summary \n')
         self.decoder.summary()
 
-    def predict(self, inputs, verbose=0):
+    def reconstruct(self, inputs, verbose=0):
         if self.net_type == 'vae':
             return self.network.network(inputs).sample()
         else:
@@ -236,7 +244,7 @@ class ManneModel():
                 print(f"Slowest: {w}")
             results += [(w, v)]
 
-            res = timeit.repeat(lambda: self.predict(
+            res = timeit.repeat(lambda: self.reconstruct(
                 random_input(n)), number=10, repeat=5)
             w = max(res) / 10
             v = (max(res) - min(res)) / 10
@@ -250,10 +258,11 @@ class ManneModel():
 
 class ManneModelLite:
     def __init__(self, model_path):
-        self.model = ManneModel(model_path)
-        print('Converting to tflite')
-        self.autoencoder, self.encoder, self.decoder = [
-            self.convert_model(net) for net in (self.model.network, self.model.encoder, self.model.decoder)]
+
+        if model_path.endswith('tflite'):
+            self.load_model(model_path)
+        else:
+            self.load_keras_model(model_path)
 
         self.input_size = self.encoder['input_shape'][1]
         self.latent_size = self.encoder['output_shape'][1]
@@ -261,10 +270,23 @@ class ManneModelLite:
         self.output_size = self.decoder['output_shape'][1]
         self.augmentation_size = self.input_size - self.output_size
 
+    def load_keras_model(self, path):
+        self.name = basename(path)
+        self.path = path
+        self.model = ManneModel(path)
+        print('Converting to tflite')
+        self.autoencoder, self.encoder, self.decoder = [
+            self.convert_model(net) for net in (self.model.network, self.model.encoder, self.model.decoder)]
+        self.net_type, self.skip = self.model.net_type, self.model.skip
+        self.augmentations = self.model.augmentations
+
     def convert_model(self, model):
         converter = tf.lite.TFLiteConverter.from_keras_model(model)
         tflite_model = converter.convert()
         interpreter = tf.lite.Interpreter(model_content=tflite_model)
+        return self.get_model_data_from_interpreter(tflite_model, interpreter)
+
+    def get_model_data_from_interpreter(self, model, interpreter):
         interpreter.allocate_tensors()
         input_details = interpreter.get_input_details()
         output_details = interpreter.get_output_details()
@@ -273,19 +295,46 @@ class ManneModelLite:
         input_index = input_details[0]['index']
         output_index = output_details[0]['index']
         return {
+            'tflite_model': model,
             'interpreter': interpreter, 'input_shape': input_shape, 'output_shape': output_shape,
             'input_index': input_index, 'output_index': output_index
         }
 
-    def run_model(self, model, input):
-        if input.ndim > 1 and input.shape[0] > 1:
-            return self.run_model_multiple(model, input)
+    def save_model(self):
+        path = self.path + "_tflite"
+        if not isdir(path):
+            makedirs(path)
+        with open(join(path, self.name + '_autoencoder.tflite'), 'wb') as f:
+            f.write(self.autoencoder['tflite_model'])
+        with open(join(path, self.name + '_encoder.tflite'), 'wb') as f:
+            f.write(self.encoder['tflite_model'])
+        with open(join(path, self.name + '_decoder.tflite'), 'wb') as f:
+            f.write(self.decoder['tflite_model'])
 
+    def load_model(self, model_path):
+        self.path = model_path
+        self.name = ("_").join(basename(model_path).split("_")[:-1])
+        self.autoencoder, self.encoder, self.decoder = [
+            self.load_submodel(join(self.path, self.name + p + '.tflite')) for p in ('_autoencoder', '_encoder', '_decoder')]
+        self.net_type, self.skip = self.name.split('_')[0:2]
+        self.skip = self.skip == 'skip'
+        self.augmentations = get_augmentations_from_filename(self.name)[0]
+
+    def load_submodel(self, path):
+        interpreter = tf.lite.Interpreter(path)
+        return self.get_model_data_from_interpreter(None, interpreter)
+
+    def run_model_once(self, model, input):
         model['interpreter'].set_tensor(model['input_index'], input)
-        return model['interpreter'].get_tensor(model['output_index'])
+        model['interpreter'].invoke()
+        output = model['interpreter'].get_tensor(model['output_index'])[0]
+        return output
 
-    def run_model_multiple(self, model, input):
-        return np.array([self.run_model(model, np.array([x])) for x in input])
+    def run_model(self, model, input):
+        # print('pre', input)
+        input = np.array(input, dtype=np.float32)
+        # print('post', input)
+        return np.vstack([self.run_model_once(model, np.array([x])) for x in input])
 
     def reconstruct(self, input):
         return self.run_model(self.autoencoder, input)
