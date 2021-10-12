@@ -78,7 +78,12 @@ class ManneTrain:
 
     def data_to_dataset(self, data):
         dataset = tf.data.Dataset.from_tensor_slices(data)
-        dataset = tf.data.Dataset.zip((dataset, dataset))
+        if self.skip:
+            augs_only = data[:, -self.augmentation_length:]
+            augs_only = tf.data.Dataset.from_tensor_slices(augs_only)
+            dataset = tf.data.Dataset.zip(((dataset, augs_only), dataset))
+        else:
+            dataset = tf.data.Dataset.zip((dataset, dataset))
         return dataset.batch(self.batch_size)
     # TRAINING
 
