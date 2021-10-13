@@ -83,7 +83,7 @@ class ManneModel():
             print(f'Model training history not found')
 
     def init_new_model(self, options, print_summaries=True):
-        dataset_name = options.get('dataset_name')
+        dataset_path = options.get('dataset_path')
         self.input_size = options.get('input_size', 2048)
         self.latent_size = options.get('latent_size', 8)
         self.output_size = options.get('output_size', 2048)
@@ -95,7 +95,7 @@ class ManneModel():
         self.define_net(print_summaries)
 
         skip = ['noskip', 'skip'][self.skip]
-        self.name = f'{self.net_type}_{skip}_l{self.latent_size}_{splitext(basename(dataset_name))[0]}'
+        self.name = f'{self.net_type}_{skip}_l{self.latent_size}_{splitext(basename(dataset_path))[0]}'
 
     def define_net(self, print_summaries=True):
 
