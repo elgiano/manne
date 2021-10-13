@@ -68,10 +68,12 @@ class ManneDataset():
         temp = D[:-1, :]
         print(f"numBins: {temp.shape[0]}, numFrames: {temp.shape[1]}")
         # phase = np.angle(temp)
+        temp = np.abs(temp)
         if normalize:
             print("Normalizing magnitudes...")
-            temp = np.abs(temp)
             temp = temp / (temp.max(axis=0) + 0.000000001)
+        else:
+            temp = temp / (temp.max() + 0.000000001)
 
         temp = np.transpose(temp)
         # phase = np.transpose(phase)
@@ -108,10 +110,12 @@ class ManneDataset():
         temp = D
         print(f"numBins: {temp.shape[0]}, numFrames: {temp.shape[1]}")
         # phase = np.angle(temp)
+        temp = np.abs(temp)
         if normalize:
             print("Normalizing magnitudes...")
-            temp = np.abs(temp)
             temp = temp / (temp.max(axis=0) + 0.000000001)
+        else:
+            temp = temp / (temp.max() + 0.000000001)
         temp = np.transpose(temp)
         # phase = np.transpose(phase)
         print("Filtering out empty frames", end="... ")
@@ -239,7 +243,8 @@ class ManneDataset():
             test_data = data[train_size:val_point]
             val_data = data[val_point:]
 
-        print(self.dataset_size, train_ratio, test_ratio, train_size, test_size)
+        print(self.dataset_size, train_ratio,
+              test_ratio, train_size, test_size)
         return train_data, val_data, test_data
 
 
@@ -341,7 +346,7 @@ def get_arguments():
     parser.add_argument('-H', '--fft_hop', type=int, default=1024,
                         help="FFT hop in samples (default: 1024)")
     parser.add_argument('-n', '--normalize', action="store_true",
-                        help="normalize frames")
+                        help="normalize each frame (default: normalizes whole dataset)")
     parser.add_argument('-a', '--anal', type=str, default="stft", choices=['stft', 'cqt'],
                         help="STFT or CQT analysis")
     parser.add_argument('-o', '--cqt_bins_per_octave', type=int, default=24,
