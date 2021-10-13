@@ -32,7 +32,7 @@ class ManneTrain:
         self.batch_size = args['batch_size']
         self.train_size = args['train_size']
         self.test_size = args['test_size']
-        self.dataset_name = args['dataset_name']
+        self.dataset_path = args['dataset_path']
         self.skip = args['skip']
 
         self.save_history = args['save_history']
@@ -42,7 +42,7 @@ class ManneTrain:
         else:
             self.distribution_strategy = tf.distribute.get_strategy()
 
-        self.load_dataset(self.dataset_name, self.skip)
+        self.load_dataset(self.dataset_path, self.skip)
         args['input_size'] = self.input_size
         args['output_size'] = self.output_size
 
@@ -267,18 +267,22 @@ class ManneTrain:
 
 def get_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('dataset_name', type=str)
-    parser.add_argument('--net_type', type=str, default='ae')
-    parser.add_argument('--skip', action="store_true")
-    parser.add_argument('--latent_size', type=int, default=8)
+    parser.add_argument('dataset_path', type=str, help='dataset to train on, or model to load for modes other than train')
+    parser.add_argument('--net_type', type=str, default='ae', choices=['ae', 'vae'])
+    parser.add_argument('--skip', action="store_true", help="enable skip connection")
     parser.add_argument('-e', '--n_epochs', type=int, default=5)
+    parser.add_argument('--latent_size', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=200)
-    parser.add_argument('--train_size', type=float, default=0.8)
-    parser.add_argument('--test_size', type=float, default=0.1)
+    parser.add_argument('--train_size', type=float, default=0.8, help="fraction of the dataset to use for training. If 1, doesn't perform validation (default: 0.8).")
+    parser.add_argument('--test_size', type=float, default=None, help="fraction of the dataset to use for testing. If None, the fraction of dataset not used for training is split equally between validation and testing (default: None).")
     parser.add_argument('--distribute', action="store_true")
-    parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--save_history', action="store_true")
     parser.add_argument('--save_latents', action="store_true")
+    parser.add_argument('--mode', type=str, default='train', choices=['train', 'plot', 'save_latents'], help='''
+        train: trains a new model;
+        plot: loads an existing model, evaluates it and saves PDFs;
+        save_latents: loads an existing model and save latent embeddings of each training example
+        (default: train)''')
 
     return parser.parse_args()
 
