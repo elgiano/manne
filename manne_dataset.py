@@ -215,18 +215,31 @@ class ManneDataset():
     feature_size = property(get_feature_size)
     dataset_size = property(get_dataset_size)
 
-    def get_splits(self, train_ratio, val_ratio, batch_size=200, shuffle=True):
-        train_size = int(train_ratio * self.dataset_size)
-        test_size = int((1 - train_ratio - val_ratio) * self.dataset_size)
-        val_point = train_size + test_size
-
+    def get_splits(self, train_ratio, test_ratio=None, batch_size=200, shuffle=True):
         data = self.frames
         if shuffle:
             np.random.shuffle(data)
-        train_data = data[:train_size]
-        test_data = data[train_size:val_point]
-        val_data = data[val_point:]
 
+        train_size = int(train_ratio * self.dataset_size)
+        train_data = data[:train_size]
+
+        if test_ratio is None:
+            if train_ratio == 1:
+                test_ratio = 0.1
+            else:
+                test_ratio = (1 - train_ratio) / 2
+
+        test_size = int(test_ratio * self.dataset_size)
+
+        if train_ratio == 1:
+            test_data = data[-test_size:]
+            val_data = []
+        else:
+            val_point = int((train_ratio + test_ratio) * self.dataset_size)
+            test_data = data[train_size:val_point]
+            val_data = data[val_point:]
+
+        print(self.dataset_size, train_ratio, test_ratio, train_size, test_size)
         return train_data, val_data, test_data
 
 

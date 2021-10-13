@@ -31,7 +31,7 @@ class ManneTrain:
         self.net_type = args['net_type']
         self.batch_size = args['batch_size']
         self.train_size = args['train_size']
-        self.val_size = args['val_size']
+        self.test_size = args['test_size']
         self.dataset_name = args['dataset_name']
         self.skip = args['skip']
 
@@ -71,10 +71,13 @@ class ManneTrain:
             f"augmentations: {dataset.augmentations} (size: {dataset.augmentations_size})")
 
         (train_data, val_data, test_data) = dataset.get_splits(
-            self.train_size, self.val_size, self.batch_size)
+            self.train_size, self.test_size, self.batch_size)
         self.train_data = self.data_to_dataset(train_data)
         self.val_data = self.data_to_dataset(val_data)
         self.test_data = self.data_to_dataset(test_data)
+        print(f"train samples: {len(train_data)}")
+        print(f"val samples: {len(val_data)}")
+        print(f"test samples: {len(test_data)}")
 
     def data_to_dataset(self, data):
         dataset = tf.data.Dataset.from_tensor_slices(data)
@@ -254,7 +257,7 @@ def get_arguments():
     parser.add_argument('-e', '--n_epochs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=200)
     parser.add_argument('--train_size', type=float, default=0.8)
-    parser.add_argument('--val_size', type=float, default=0.1)
+    parser.add_argument('--test_size', type=float, default=0.1)
     parser.add_argument('--distribute', action="store_true")
     parser.add_argument('--mode', type=str, default='train')
     parser.add_argument('--save_history', action="store_true")
