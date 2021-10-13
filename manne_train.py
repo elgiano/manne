@@ -177,7 +177,7 @@ class ManneTrain:
     def evaluate_net(self):
         print('\n')
         print('Evaluating performance on validation and test sets')
-        if len(self.val_data) > 0 :
+        if len(self.val_data) > 0:
             a = self.model.network.evaluate(self.val_data, verbose=1)
             print('\n')
             val_metrics = "Validation\n\n"
@@ -198,16 +198,15 @@ class ManneTrain:
         print('Plotting network reconstructions')
 
         num_plots = 10
-        if len(self.val_data) > 0 :
+        if len(self.val_data) > 0:
             valset_eval_in = self.get_samples(self.val_data, num_plots)
             valset_eval = self.model.reconstruct(valset_eval_in)
 
         testset_eval_in = self.get_samples(self.test_data, num_plots)
         testset_eval = self.model.reconstruct(testset_eval_in)
 
-
         print('Printing PDFs')
-        if len(self.val_data) > 0 :
+        if len(self.val_data) > 0:
             self.plot_pdf('val', valset_eval_in, valset_eval, val_metrics)
         self.plot_pdf('test', testset_eval_in, testset_eval, test_metrics)
 
@@ -217,7 +216,7 @@ class ManneTrain:
         samples = np.array(dataset[:n])[:, 0]
         if self.skip is True:
             # separate inputs
-            return [samples[:, 0], samples[:, 1]]
+            return [np.array([x[0] for x in samples]), np.array([x[1] for x in samples])]
         else:
             return samples
 
@@ -258,24 +257,24 @@ class ManneTrain:
             pdf.savefig()
             plt.close()
 
-    def just_plot(self):
-        self.compile_model()
-        self.evaluate_net()
-
     def save_latents(self):
         self.model.save_latents(self.train_data, name='train')
 
 
 def get_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument('dataset_path', type=str, help='dataset to train on, or model to load for modes other than train')
-    parser.add_argument('--net_type', type=str, default='ae', choices=['ae', 'vae'])
-    parser.add_argument('--skip', action="store_true", help="enable skip connection")
+    parser.add_argument('dataset_path', type=str)
+    parser.add_argument('--net_type', type=str,
+                        default='ae', choices=['ae', 'vae'])
+    parser.add_argument('--skip', action="store_true",
+                        help="enable skip connection")
     parser.add_argument('-e', '--n_epochs', type=int, default=5)
     parser.add_argument('--latent_size', type=int, default=8)
     parser.add_argument('--batch_size', type=int, default=200)
-    parser.add_argument('--train_size', type=float, default=0.8, help="fraction of the dataset to use for training. If 1, doesn't perform validation (default: 0.8).")
-    parser.add_argument('--test_size', type=float, default=None, help="fraction of the dataset to use for testing. If None, the fraction of dataset not used for training is split equally between validation and testing (default: None).")
+    parser.add_argument('--train_size', type=float, default=0.8,
+                        help="fraction of the dataset to use for training. If 1, doesn't perform validation (default: 0.8).")
+    parser.add_argument('--test_size', type=float, default=None,
+                        help="fraction of the dataset to use for testing. If None, the fraction of dataset not used for training is split equally between validation and testing (default: None).")
     parser.add_argument('--distribute', action="store_true")
     parser.add_argument('--save_history', action="store_true")
     parser.add_argument('--save_latents', action="store_true")
@@ -292,7 +291,8 @@ if __name__ == '__main__':
     args = get_arguments()
     t = ManneTrain(vars(args))
     if args.mode == 'plot':
-        t.just_plot()
+        t.compile_model()
+        t.evaluate_net()
     elif args.mode == 'save_latents':
         t.compile_model()
         t.save_latents()
