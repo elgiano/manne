@@ -47,6 +47,10 @@ class ManneModel():
 
         self.history = self.load_history()
 
+    def get_checkpoints_dir(self):
+        # return join('models', self.name, 'checkpoints')
+        return join('models', self.name)
+
     def save_model(self, save_history=False):
         self.network.save(join('models', self.name))
         if save_history:

@@ -143,10 +143,20 @@ class ManneTrain:
                 alpha.assign(0)
 
         cp_cb = LambdaCallback(on_epoch_end=change_params)
-        early_stop = tf.keras.callbacks.EarlyStopping(
-            monitor='val_loss', patience=10, restore_best_weights=True
+        # early_stop = tf.keras.callbacks.EarlyStopping(
+        #     monitor='val_loss', patience=10, restore_best_weights=True
+        # )
+        # callbacks = [cp_cb, early_stop]
+        checkpoint_path = self.model.get_checkpoints_dir()
+        checkpoint_monitor = 'val_loss'
+        if len(self.val_data) == 0:
+            checkpoint_monitor = 'loss'
+        checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
+            filepath=checkpoint_path,
+            save_weights_only=False, save_best_only=True,
+            monitor=checkpoint_monitor, mode='min',
         )
-        callbacks = [cp_cb, early_stop]
+        callbacks = [cp_cb, checkpoint_cb]
 
         self.compile_model()
         train_start_time = time()
@@ -156,7 +166,8 @@ class ManneTrain:
                                    callbacks=callbacks
                                    )
         train_dur = time() - train_start_time
-        self.model.save_model()
+        # no need to save again: already done by ModelCheckpoint
+        # self.model.save_model()
         if self.save_history:
             self.model.save_history(extra={'train_dur': train_dur})
 
@@ -165,14 +176,16 @@ class ManneTrain:
     def evaluate_net(self):
         print('\n')
         print('Evaluating performance on validation and test sets')
-        a = self.model.network.evaluate(self.val_data, verbose=1)
+        if len(self.val_data) > 0 :
+            a = self.model.network.evaluate(self.val_data, verbose=1)
+            print('\n')
+            val_metrics = "Validation\n\n"
+            for idx in range(len(self.model.network.metrics_names)):
+                print('Validation ' + self.model.network.metrics_names[idx])
+                print(a[idx])
+                val_metrics += f"{self.model.network.metrics_names[idx]}: {a[idx]}\n"
+
         b = self.model.network.evaluate(self.test_data, verbose=1)
-        print('\n')
-        val_metrics = "Validation\n\n"
-        for idx in range(len(self.model.network.metrics_names)):
-            print('Validation ' + self.model.network.metrics_names[idx])
-            print(a[idx])
-            val_metrics += f"{self.model.network.metrics_names[idx]}: {a[idx]}\n"
         print('\n')
         test_metrics = "Testing\n\n"
         for idx in range(len(self.model.network.metrics_names)):
@@ -180,17 +193,21 @@ class ManneTrain:
             print(b[idx])
             test_metrics += f"{self.model.network.metrics_names[idx]}: {b[idx]}\n"
         print('\n')
+
         print('Plotting network reconstructions')
 
         num_plots = 10
-        valset_eval_in = self.get_samples(self.val_data, num_plots)
-        testset_eval_in = self.get_samples(self.test_data, num_plots)
+        if len(self.val_data) > 0 :
+            valset_eval_in = self.get_samples(self.val_data, num_plots)
+            valset_eval = self.model.reconstruct(valset_eval_in)
 
-        valset_eval = self.model.reconstruct(valset_eval_in)
+        testset_eval_in = self.get_samples(self.test_data, num_plots)
         testset_eval = self.model.reconstruct(testset_eval_in)
 
+
         print('Printing PDFs')
-        self.plot_pdf('val', valset_eval_in, valset_eval, val_metrics)
+        if len(self.val_data) > 0 :
+            self.plot_pdf('val', valset_eval_in, valset_eval, val_metrics)
         self.plot_pdf('test', testset_eval_in, testset_eval, test_metrics)
 
     def get_samples(self, dataset, n):
