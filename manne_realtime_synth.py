@@ -1,7 +1,7 @@
 import pyaudio
 import threading
 import argparse
-from manne_realtime import ManneMidiThread, OutputFrameBuffer, ManneRealtime
+from manne_realtime import ManneMidiThread, ManneOSCThread, OutputFrameBuffer, ManneRealtime
 import numpy as np
 # from functools import partial
 
@@ -23,14 +23,14 @@ class ManneRealtimeSynth(ManneRealtime):
                          fft_size, block_size, wants_inputs=False)
 
     def start_midi(self):
-        self.midi = ManneMidiThread(self.renderer.latent_size)
-        self.midi.start()
+        self.ctrl = ManneOSCThread(self.renderer.latent_size)
+        self.ctrl.start()
 
     def stop(self):
         self.audio_stream.close()
         # self.gen.stop()
-        self.midi.stop()
-        self.midi.join()
+        self.ctrl.stop()
+        self.ctrl.join()
 
     def start_generator(self):
         # self.gen = GeneratorThread(
@@ -40,7 +40,7 @@ class ManneRealtimeSynth(ManneRealtime):
             self.renderer, self.block_size, gen_blocks=1, max_frames=1)
 
     def audio_callback(self, in_frames, frame_count, time_info, status_flags):
-        latents, note, amp = self.midi.get_all_params()
+        latents, note, amp = self.ctrl.get_all_params()
         self.gen.set_latents(latents)
         self.gen.set_note(note)
         self.set_amp(amp)
@@ -107,7 +107,9 @@ class Generator():
         return latents
 
     def get_audio_block(self):
-        self.out.add_frames(self.generate_audio())
+        frames = self.generate_audio()
+        if len(frames) > 0:
+            self.out.add_frames(frames)
         return self.out.get_audio_block()
 
     def generate_audio(self):
@@ -117,13 +119,13 @@ class Generator():
         if self.has_skip and self.has_chroma:
             if self.has_octave:
                 out = self.renderer.note(chroma, octave, latents, self.sr,
-                                         self.fft_size, self.fft_hop, rtpghi=False, istft=False)
+                                         self.fft_size, self.fft_hop, istft=False)
             else:
                 out = self.renderer.chroma(chroma, latents, self.sr,
-                                           self.fft_size, self.fft_hop, rtpghi=False, istft=False)
+                                           self.fft_size, self.fft_hop, istft=False)
         else:
             out = self.renderer.decode(
-                latents, self.sr, self.fft_size, self.fft_hop, rtpghi=False, istft=False)
+                latents, self.sr, self.fft_size, self.fft_hop, istft=False)
         return out
 
 
@@ -140,7 +142,10 @@ class GeneratorThread(threading.Thread, Generator):
         print("[Generator] Starting generator thread")
         self.running = True
         while self.running:
-            self.out.add_frames(self.generate_audio())
+            frames = self.generate_audio()
+            print(frames)
+            if len(frames) > 0:
+                self.out.add_frames(frames)
             # print(self.out.frames.qsize())
 
     def stop(self):

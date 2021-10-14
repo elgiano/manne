@@ -7,20 +7,46 @@ from queue import Queue, Empty
 import rtmidi
 import threading
 import librosa
+from pythonosc.dispatcher import Dispatcher
+from pythonosc.osc_server import BlockingOSCUDPServer
 
 
-class ManneMidiThread(threading.Thread):
+class ManneControlThread(threading.Thread):
     def __init__(self, num_latents, min_latent=0, max_latent=1):
-        super(ManneMidiThread, self).__init__()
-        self.midiin = rtmidi.MidiIn(name="manne")
-        self.midiin.open_virtual_port("manne")
+        super(ManneControlThread, self).__init__()
         self.latents = np.zeros(num_latents)
-        self.note = 60
-        self.amp = 10
-        self._wallclock = time()
-        self.queue = Queue()
         self.latent_range = max_latent - min_latent
         self.min_latent = min_latent
+        self.note = 60
+        self.amp = 10
+
+    def run(self):
+        pass
+
+    def stop(self):
+        pass
+
+    def get_latents(self):
+        return np.copy(self.latents)
+
+    def get_note(self):
+        return self.note
+
+    def get_amp(self):
+        return self.amp
+
+    def get_all_params(self):
+        return np.copy(self.latents), self.note, self.amp
+
+
+class ManneMidiThread(ManneControlThread):
+    def __init__(self, num_latents, min_latent=0, max_latent=1):
+        super(ManneMidiThread, self).__init__(
+            num_latents, min_latent, max_latent)
+        self.midiin = rtmidi.MidiIn(name="manne")
+        self.midiin.open_virtual_port("manne")
+        self._wallclock = time()
+        self.queue = Queue()
 
     def __call__(self, event, data=None):
         message, deltatime = event
@@ -54,20 +80,47 @@ class ManneMidiThread(threading.Thread):
                 else:
                     print('[MIDI] unknown event type', type, val)
 
-    def get_latents(self):
-        return np.copy(self.latents)
-
-    def get_note(self):
-        return self.note
-
-    def get_amp(self):
-        return self.amp
-
-    def get_all_params(self):
-        return np.copy(self.latents), self.note, self.amp
-
     def stop(self):
         self.queue.put(None)
+
+
+class ManneOSCThread(ManneControlThread):
+    def __init__(self, num_latents, min_latent=0, max_latent=1, host='localhost', port=57130):
+        super(ManneOSCThread, self).__init__(
+            num_latents, min_latent, max_latent)
+        dispatcher = Dispatcher()
+        dispatcher.map('/latents', self.set_latents)
+        dispatcher.map('/latent', self.set_latent)
+        dispatcher.map('/amp', self.set_amp)
+        dispatcher.map('/noteOn', self.note_on)
+        dispatcher.map('/noteOff', self.note_off)
+        print(f"[OSC] starting server at {host}:{port}")
+        self.osc_server = BlockingOSCUDPServer((host, port), dispatcher)
+
+    def run(self):
+        self.osc_server.serve_forever()
+
+    def stop(self):
+        self.osc_server.server_close()
+
+    def set_amp(self, cmd, *args):
+        self.amp = args[0]
+
+    def set_latent(self, cmd, *args):
+        # print('[OSC] set latent', args)
+        latent_num, new_val = args[:2]
+        self.latents[latent_num] = new_val
+
+    def set_latents(self, cmd, *args):
+        # print('[OSC] set latents', args)
+        self.latents = np.array(args)
+
+    def note_on(self, cmd, *args):
+        print('[OSC] set note', args[:2])
+        self.note, self.amp = args[:2]
+
+    def note_off(self, cmd, *args):
+        self.amp = 0
 
 
 class OutputFrameBuffer():

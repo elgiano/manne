@@ -28,6 +28,7 @@ class ManneModel():
 
     def load_saved_model(self, filename):
         self.name = splitext(basename(filename))[0]
+        print(f"[Model] loading {self.name}")
 
         self.network = load_model(filename)
         self.encoder = self.network.get_layer('encoder')
@@ -96,6 +97,7 @@ class ManneModel():
 
         skip = ['noskip', 'skip'][self.skip]
         self.name = f'{self.net_type}_{skip}_l{self.latent_size}_{splitext(basename(dataset_path))[0]}'
+        print(f"[Model] creating {self.name}")
 
     def define_net(self, print_summaries=True):
 
