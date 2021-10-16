@@ -27,6 +27,9 @@ class ManneModel():
             self.init_new_model(filenameOrOptions, verbose)
 
     def load_saved_model(self, filename):
+        if filename.endswith('/'):
+            filename = filename[:-1]
+        self.model_path = filename
         self.name = splitext(basename(filename))[0]
         print(f"[Model] loading {self.name}")
 
@@ -66,7 +69,7 @@ class ManneModel():
     def load_latents(self, name=''):
         if name:
             name += '_'
-        return np.load(join('models', self.name, f'{name}latents.npy'))
+        return np.load(join(self.model_path, f'{name}latents.npy'))
 
     def save_history(self, extra={}):
         h = self.network.history.history
