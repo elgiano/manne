@@ -1,30 +1,41 @@
 import pyaudio
 import numpy as np
 from pyaudio import PyAudio
-from time import time, sleep
+from time import sleep
 from manne_render import ManneSynth
 from queue import Queue, Empty
-import rtmidi
 import threading
 import librosa
 from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import BlockingOSCUDPServer
+from os.path import basename
 
 
-class ManneControlThread(threading.Thread):
-    def __init__(self, num_latents, min_latent=0, max_latent=1):
-        super(ManneControlThread, self).__init__()
-        self.latents = np.zeros(num_latents)
-        self.latent_range = max_latent - min_latent
-        self.min_latent = min_latent
-        self.note = 60
-        self.amp = 10
+class ManneOSCThread(threading.Thread):
+    def __init__(self, synth, host='localhost', port=57130):
+        super(ManneOSCThread, self).__init__()
+        self.synth = synth
+        self.latents = self.synth.get_empty_latents()
+        self.loaded_model_names = self.synth.get_model_names()
+        self.active_model_names = [
+            self.loaded_model_names[0] for i in self.latents]
+        self.note = np.tile(60, self.synth.num_channels)
+        self.amp = np.tile(10, self.synth.num_channels)
+        dispatcher = Dispatcher()
+        dispatcher.map('/latents', self.set_latents)
+        dispatcher.map('/latent', self.set_latent)
+        dispatcher.map('/amp', self.set_amp)
+        dispatcher.map('/noteOn', self.note_on)
+        dispatcher.map('/noteOff', self.note_off)
+        dispatcher.map('/model', self.choose_model)
+        print(f"[OSC] starting server at {host}:{port}")
+        self.osc_server = BlockingOSCUDPServer((host, port), dispatcher)
 
     def run(self):
-        pass
+        self.osc_server.serve_forever()
 
     def stop(self):
-        pass
+        self.osc_server.server_close()
 
     def get_latents(self):
         return np.copy(self.latents)
@@ -35,92 +46,39 @@ class ManneControlThread(threading.Thread):
     def get_amp(self):
         return self.amp
 
-    def get_all_params(self):
-        return np.copy(self.latents), self.note, self.amp
-
-
-class ManneMidiThread(ManneControlThread):
-    def __init__(self, num_latents, min_latent=0, max_latent=1):
-        super(ManneMidiThread, self).__init__(
-            num_latents, min_latent, max_latent)
-        self.midiin = rtmidi.MidiIn(name="manne")
-        self.midiin.open_virtual_port("manne")
-        self._wallclock = time()
-        self.queue = Queue()
-
-    def __call__(self, event, data=None):
-        message, deltatime = event
-        self._wallclock += deltatime
-        # print("IN: @%0.6f %r", self._wallclock, message)
-        self.queue.put((message, self._wallclock))
-
-    def run(self):
-        print("[MIDI] Attaching MIDI input callback handler.")
-        self.midiin.set_callback(self)
-
-        while True:
-            event = self.queue.get()
-
-            if event is None:
-                self.midiin.close_port()
-                break
-            else:
-                type, num, val = event[0]
-                if type == 176:
-                    if num == 1:
-                        self.amp = val / 127 * 100
-                    elif num in range(2, len(self.latents) + 1):
-                        self.latents[num - 2] = val / 127 * \
-                            (self.latent_range) + self.min_latent
-                elif type == 144:
-                    self.note = num
-                    self.amp = val
-                elif type == 128:
-                    self.amp = 0
-                else:
-                    print('[MIDI] unknown event type', type, val)
-
-    def stop(self):
-        self.queue.put(None)
-
-
-class ManneOSCThread(ManneControlThread):
-    def __init__(self, num_latents, min_latent=0, max_latent=1, host='localhost', port=57130):
-        super(ManneOSCThread, self).__init__(
-            num_latents, min_latent, max_latent)
-        dispatcher = Dispatcher()
-        dispatcher.map('/latents', self.set_latents)
-        dispatcher.map('/latent', self.set_latent)
-        dispatcher.map('/amp', self.set_amp)
-        dispatcher.map('/noteOn', self.note_on)
-        dispatcher.map('/noteOff', self.note_off)
-        print(f"[OSC] starting server at {host}:{port}")
-        self.osc_server = BlockingOSCUDPServer((host, port), dispatcher)
-
-    def run(self):
-        self.osc_server.serve_forever()
-
-    def stop(self):
-        self.osc_server.server_close()
-
     def set_amp(self, cmd, *args):
-        self.amp = args[0]
+        ch = args[0]
+        self.amp[ch] = args[1]
 
     def set_latent(self, cmd, *args):
         # print('[OSC] set latent', args)
-        latent_num, new_val = args[:2]
-        self.latents[latent_num] = new_val
+        ch = args[0]
+        latent_num, new_val = args[1:3]
+        self.latents[ch][latent_num] = new_val
 
     def set_latents(self, cmd, *args):
         # print('[OSC] set latents', args)
-        self.latents = np.array(args)
+        ch = args[0]
+        self.latents[ch] = np.array(args[1:])
 
     def note_on(self, cmd, *args):
         print('[OSC] set note', args[:2])
-        self.note, self.amp = args[:2]
+        ch = args[0]
+        self.note[ch] = args[1]
+        self.amp[ch] = args[2]
 
     def note_off(self, cmd, *args):
-        self.amp = 0
+        ch = args[0]
+        self.amp[ch] = 0
+
+    def choose_model(self, cmd, *args):
+        ch, model = args[:2]
+        if type(model) in [int, float]:
+            model = self.loaded_model_names[int(model)]
+        self.active_model_names[ch] = model
+
+    def get_all_params(self):
+        return np.copy(self.latents), np.copy(self.note), np.copy(self.amp), np.copy(self.active_model_names)
 
 
 class OutputFrameBuffer():
@@ -168,51 +126,194 @@ class OutputFrameBuffer():
             return np.zeros(self.block_size)
 
 
+class Generator():
+    def __init__(self, renderer, block_size, gen_blocks=1, max_frames=1, sr=44100, fft_size=4096, fft_hop=None):
+        if fft_hop is None:
+            fft_hop = block_size
+        self.sr, self.fft_size, self.fft_hop = sr, fft_size, fft_hop
+        self.block_frames = block_size / fft_size * (fft_size // fft_hop)
+        self.gen_frames = int(gen_blocks * self.block_frames)
+        print(
+            f"[Generator] making {self.gen_frames} frames per call to generate {gen_blocks} audio blocks ({self.block_frames} frames/block)")
+        self.out = OutputFrameBuffer(block_size, max_frames * gen_blocks)
+        self.running = False
+        self.chroma = 6
+        self.octave = 4
+
+        self.set_renderer(renderer)
+
+        self.has_skip = self.renderer.model_has_skip
+        self.has_chroma = 'chroma' in self.renderer.model_augmentations
+        self.has_octave = 'octave' in self.renderer.model_augmentations
+
+        print(
+            f"[Generator] model skip:{self.has_skip}, chroma:{self.has_chroma}, octave:{self.has_octave}")
+        # latent transition durs
+        self.trans_frames = int(self.block_frames)
+        if self.trans_frames < 1:
+            self.trans_frames = 1
+        self.cont_frames = self.gen_frames - self.trans_frames
+        if self.cont_frames < 0:
+            self.cont_frames = 0
+
+    def set_renderer(self, renderer):
+        self.renderer = renderer
+        self.latents = np.zeros(self.renderer.latent_size)
+        self.new_latents = None
+
+    def set_latents(self, new_latents):
+        if np.any(new_latents != self.latents):
+            self.new_latents = new_latents
+
+    def set_note(self, midinote):
+        self.chroma = midinote % 12
+        self.octave = midinote // 12
+
+    def _get_updated_latents(self):
+        latent_shape = (-1, len(self.latents))
+        if self.new_latents is not None:
+            trans = np.linspace(
+                self.latents, self.new_latents, self.trans_frames)
+            cont = np.tile(self.new_latents, self.cont_frames).reshape(
+                latent_shape)
+            self.latents = self.new_latents
+            self.new_latents = None
+            # self.out.frames.queue.clear()
+            latents = np.vstack((trans, cont))
+        else:
+            latents = np.tile(self.latents, self.gen_frames).reshape(
+                latent_shape)
+        return latents
+
+    def get_audio_block(self):
+        frames = self.generate_audio()
+        if len(frames) > 0:
+            self.out.add_frames(frames)
+        return self.out.get_audio_block()
+
+    def generate_audio(self):
+        chroma = self.chroma
+        octave = self.octave
+        latents = self._get_updated_latents()
+        if self.has_skip and self.has_chroma:
+            if self.has_octave:
+                out = self.renderer.note(chroma, octave, latents, self.sr,
+                                         self.fft_size, self.fft_hop, istft=False)
+            else:
+                out = self.renderer.chroma(chroma, latents, self.sr,
+                                           self.fft_size, self.fft_hop, istft=False)
+        else:
+            out = self.renderer.decode(
+                latents, self.sr, self.fft_size, self.fft_hop, istft=False)
+        return out
+
+
 class ManneRealtime():
-    def __init__(self, model_name, rate=44100, num_channels=2, fft_size=4096, block_size=2048, wants_inputs=False):
-        self.renderer = ManneSynth(model_name, verbose=False)
-        self.rate, self.num_channels, self.wants_inputs = rate, num_channels, wants_inputs
+    def __init__(self, model_name, rate=48000, num_channels=1, stereo=True, fft_size=4096, block_size=2048, wants_inputs=False, output_device=None):
+        self.models = {}
+        if type(model_name) is not list:
+            model_name = [model_name]
+
+        for path in model_name:
+            name = basename(path)
+            self.models[name] = ManneSynth(path, verbose=False)
+
+        self.output_device = output_device
+        self.rate, self.num_channels, self.stereo, self.wants_inputs = rate, num_channels, stereo, wants_inputs
         self.window_size = fft_size
         self.block_size = block_size
-        # self.block_time = self.block_size / self.rate
-        self.amp = 10
-        self.new_amp = None
+        self.amp = []
+        self.new_amp = []
+        self.gen = []
+        first_model = self.models[self.get_model_names()[0]]
+        for ch in range(self.num_channels):
+            self.amp.append(10)
+            self.new_amp.append(None)
+            self.gen.append(Generator(
+                first_model, self.block_size, gen_blocks=1, max_frames=1))
 
-    def _get_updated_amp(self, block_size):
-        if self.new_amp is not None:
+    def _get_updated_amp_ch(self, ch, block_size):
+        if self.new_amp[ch] is not None:
             trans = np.linspace(
-                self.amp, self.new_amp, block_size)
-            self.amp = self.new_amp
-            self.new_amp = None
+                self.amp[ch], self.new_amp[ch], block_size)
+            self.amp[ch] = self.new_amp[ch]
+            self.new_amp[ch] = None
             return trans
         else:
-            return self.amp
+            return self.amp[ch]
 
-    def set_amp(self, new_amp):
-        if new_amp != self.amp:
-            self.new_amp = new_amp
+    def _get_updated_amp(self, block_size):
+        return [self._get_updated_amp_ch(ch, block_size)
+                for ch in range(self.num_channels)]
+
+    def get_empty_latents(self):
+        return [np.zeros(g.renderer.latent_size) for g in self.gen]
+
+    def set_model(self, ch, model_name):
+        # print(ch, self.num_channels)
+        new_model = self.models[model_name]
+        if self.gen[ch].renderer is not new_model:
+            if new_model is not None:
+                self.gen[ch].set_renderer(new_model)
+            else:
+                print(f'[ManneSynth] invalid model name "{model_name}"')
+
+    def update_gen_params(self, model_names, new_latents, new_notes):
+        for ch in range(self.num_channels):
+            self.set_model(ch, model_names[ch])
+            self.gen[ch].set_latents(new_latents[ch])
+            self.gen[ch].set_note(new_notes[ch])
+
+    def get_model_names(self):
+        return list(self.models.keys())
+
+    def set_amp(self, new_amps):
+        for (ch, new_amp) in enumerate(new_amps):
+            self.set_amp_ch(ch, new_amp)
+
+    def set_amp_ch(self, ch, new_amp):
+        if new_amp != self.amp[ch]:
+            self.new_amp[ch] = new_amp
 
     def start(self):
-        self.start_midi()
-        self.start_generator()
+        self.start_ctrl()
         self.init_audio()
 
     def stop(self):
         self.audio_stream.close()
-        self.gen.stop()
-        self.midi.stop()
-        self.midi.join()
+        self.ctrl.stop()
+        self.ctrl.join()
+
+    def start_ctrl(self):
+        self.ctrl = ManneOSCThread(self)
+        self.ctrl.start()
 
     def init_audio(self):
         self.p = PyAudio()
+        channels = self.num_channels
+        if self.stereo:
+            channels = 2
+        if self.output_device:
+            self.output_device = self.find_device(self.output_device)
+
         self.audio_stream = self.p.open(
-            format=pyaudio.paInt16,
-            channels=self.num_channels,
+            output_device_index=self.output_device,
+            format=pyaudio.paFloat32,
+            channels=channels,
             rate=self.rate,
             output=True, input=self.wants_inputs,
             frames_per_buffer=self.block_size,
             stream_callback=self.audio_callback
         )
+
+    def find_device(self, device_name):
+        num_devices = self.p.get_device_count()
+        for i in range(num_devices):
+            if self.p.get_device_info_by_index(i)['name'] == device_name:
+                print(f'[ManneRealtime] output device = {i}: {device_name}')
+                return i
+        print(f'[ManneRealtime] device {device_name} not found. Using default')
+        return None
 
     def run_main(self):
         try:
@@ -226,9 +327,6 @@ class ManneRealtime():
             print("Exit.")
 
     def start_generator(self):
-        pass
-
-    def start_midi(self):
         pass
 
     def audio_callback(self, in_frames, frame_count, time_info, status_flags):
