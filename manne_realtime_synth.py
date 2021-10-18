@@ -17,14 +17,18 @@ class ManneRealtimeSynth(ManneRealtime):
         self.update_gen_params(models, latents, note)
         self.set_amp(amp)
         amp = self._get_updated_amp(self.block_size)
-        out_channels = np.array([self.gen[ch].get_audio_block() * amp[ch]
-                                 for ch in range(self.num_channels)])
+        out_channels = np.array([gen.get_audio_block() for gen in self.gen])
+        out_channels = np.array(
+            [block * a for (block, a) in zip(out_channels, amp)])
+
+        # out_channels = np.array([self.gen[ch].get_audio_block() * amp[ch]
+        #                          for ch in range(self.num_channels)])
 
         if self.stereo:
             out = out_channels.sum(axis=0)
             out_frames = np.repeat(out, 2).tobytes()
         else:
-            out = out_channels.reshape(-1, order="F")  # interleave
+            out_frames = out_channels.reshape(-1, order="F")  # interleave
 
         return (out_frames, pyaudio.paContinue)
 

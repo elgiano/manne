@@ -6,9 +6,46 @@ from manne_render import ManneSynth
 from queue import Queue, Empty
 import threading
 import librosa
-from pythonosc.dispatcher import Dispatcher
-from pythonosc.osc_server import BlockingOSCUDPServer
 from os.path import basename
+
+try:
+    from collections.abc import Iterable
+except ImportError:  # python 3.5
+    from collections import Iterable
+
+import socket
+
+from pythonosc.osc_message_builder import OscMessageBuilder
+from pythonosc.osc_message import OscMessage
+from pythonosc.osc_bundle import OscBundle
+from pythonosc.osc_server import OSCUDPServer
+from pythonosc.dispatcher import Dispatcher
+
+from typing import Union, Tuple
+
+
+class OSCServerClient(OSCUDPServer):
+
+    def __init__(self, server_address: Tuple[str, int], dispatcher: Dispatcher, allow_broadcast=True) -> None:
+        super().__init__(server_address, dispatcher)
+        if allow_broadcast:
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+    def send(self, recv_addr, content: Union[OscMessage, OscBundle]) -> None:
+        self.socket.sendto(content.dgram, recv_addr)
+
+    def send_message(self, recv_addr, address: str, value: Union[int, float, bytes, str, bool, tuple, list]) -> None:
+        builder = OscMessageBuilder(address=address)
+        if value is None:
+            values = []
+        elif not isinstance(value, Iterable) or isinstance(value, (str, bytes)):
+            values = [value]
+        else:
+            values = value
+        for val in values:
+            builder.add_arg(val)
+        msg = builder.build()
+        self.send(recv_addr, msg)
 
 
 class ManneOSCThread(threading.Thread):
@@ -19,8 +56,8 @@ class ManneOSCThread(threading.Thread):
         self.loaded_model_names = self.synth.get_model_names()
         self.active_model_names = [
             self.loaded_model_names[0] for i in self.latents]
-        self.note = np.tile(60, self.synth.num_channels)
-        self.amp = np.tile(10, self.synth.num_channels)
+        self.note = np.tile(60.0, self.synth.num_channels).astype(np.float32)
+        self.amp = np.tile(10.0, self.synth.num_channels).astype(np.float32)
         dispatcher = Dispatcher()
         dispatcher.map('/latents', self.set_latents)
         dispatcher.map('/latent', self.set_latent)
@@ -28,14 +65,18 @@ class ManneOSCThread(threading.Thread):
         dispatcher.map('/noteOn', self.note_on)
         dispatcher.map('/noteOff', self.note_off)
         dispatcher.map('/model', self.choose_model)
+        dispatcher.map('/get_model_names', self.reply_model_names,
+                       needs_reply_address=True)
+        dispatcher.map('/get_active_models',
+                       self.reply_active_models, needs_reply_address=True)
         print(f"[OSC] starting server at {host}:{port}")
-        self.osc_server = BlockingOSCUDPServer((host, port), dispatcher)
+        self.osc_server = OSCServerClient((host, port), dispatcher)
 
     def run(self):
         self.osc_server.serve_forever()
 
     def stop(self):
-        self.osc_server.server_close()
+        self.osc_server.shutdown()
 
     def get_latents(self):
         return np.copy(self.latents)
@@ -48,7 +89,7 @@ class ManneOSCThread(threading.Thread):
 
     def set_amp(self, cmd, *args):
         ch = args[0]
-        self.amp[ch] = args[1]
+        self.amp[ch] = np.float32(args[1])
 
     def set_latent(self, cmd, *args):
         # print('[OSC] set latent', args)
@@ -76,6 +117,12 @@ class ManneOSCThread(threading.Thread):
         if type(model) in [int, float]:
             model = self.loaded_model_names[int(model)]
         self.active_model_names[ch] = model
+
+    def reply_model_names(self, client_addr, cmd, *args):
+        self.osc_server.send_message(client_addr, cmd, self.loaded_model_names)
+
+    def reply_active_models(self, client_addr, cmd, *args):
+        self.osc_server.send_message(client_addr, cmd, self.active_model_names)
 
     def get_all_params(self):
         return np.copy(self.latents), np.copy(self.note), np.copy(self.amp), np.copy(self.active_model_names)
@@ -235,8 +282,8 @@ class ManneRealtime():
     def _get_updated_amp_ch(self, ch, block_size):
         if self.new_amp[ch] is not None:
             trans = np.linspace(
-                self.amp[ch], self.new_amp[ch], block_size)
-            self.amp[ch] = self.new_amp[ch]
+                self.amp[ch], self.new_amp[ch], block_size, dtype=np.float32)
+            self.amp[ch] = trans[-1]
             self.new_amp[ch] = None
             return trans
         else:
