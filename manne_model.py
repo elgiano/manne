@@ -138,6 +138,7 @@ class ManneModel():
             units=self.encoder_widths[-1], activation='sigmoid', kernel_regularizer=l2(l2_penalty))(encoded)
 
         if self.net_type == 'vae':
+            self.beta = 1.5
             dim_z = self.encoder_widths[-1]
             prior = tfd.Independent(tfd.Normal(loc=tf.zeros(
                 dim_z), scale=1.), reinterpreted_batch_ndims=1)
@@ -175,7 +176,7 @@ class ManneModel():
             decoded = Dense(
                 units=tfpl.IndependentNormal.params_size(self.output_size))(decoded)
             decoded = tfpl.IndependentNormal(
-                self.output_size, name='x_layer', )(decoded)
+                self.output_size, name='x_layer')(decoded)
         self.decoder = Model(input_latent, decoded, name='decoder')
 
         # NEWORK
