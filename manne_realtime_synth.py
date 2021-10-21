@@ -8,12 +8,12 @@ from os.path import join
 
 class ManneRealtimeSynth(ManneRealtime):
 
-    def __init__(self, model_name, rate=48000, num_channels=1, stereo=True, block_size=2048, fft_size=4096, output_device=None):
+    def __init__(self, model_name, rate=44100, num_channels=1, stereo=True, block_size=2048, fft_size=4096, output_device=None):
         super().__init__(model_name, rate, num_channels, stereo,
                          fft_size, block_size, False, output_device)
 
     def audio_callback(self, in_frames, frame_count, time_info, status_flags):
-        latents, note, amp, models = self.ctrl.get_all_params()
+        latents, note, amp, models, self.stereo = self.ctrl.get_all_params()
         self.update_gen_params(models, latents, note)
         self.set_amp(amp)
         amp = self._get_updated_amp(self.block_size)
@@ -23,7 +23,6 @@ class ManneRealtimeSynth(ManneRealtime):
 
         # out_channels = np.array([self.gen[ch].get_audio_block() * amp[ch]
         #                          for ch in range(self.num_channels)])
-
         if self.stereo:
             out = out_channels.sum(axis=0)
             out_frames = np.repeat(out, 2).tobytes()

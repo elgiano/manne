@@ -58,6 +58,7 @@ class ManneOSCThread(threading.Thread):
             self.loaded_model_names[0] for i in self.latents]
         self.note = np.tile(60.0, self.synth.num_channels).astype(np.float32)
         self.amp = np.tile(10.0, self.synth.num_channels).astype(np.float32)
+        self.stereo = synth.stereo
         dispatcher = Dispatcher()
         dispatcher.map('/latents', self.set_latents)
         dispatcher.map('/latent', self.set_latent)
@@ -65,6 +66,7 @@ class ManneOSCThread(threading.Thread):
         dispatcher.map('/noteOn', self.note_on)
         dispatcher.map('/noteOff', self.note_off)
         dispatcher.map('/model', self.choose_model)
+        dispatcher.map('/stereoMix', self.set_stereo)
         dispatcher.map('/get_model_names', self.reply_model_names,
                        needs_reply_address=True)
         dispatcher.map('/get_active_models',
@@ -118,6 +120,9 @@ class ManneOSCThread(threading.Thread):
             model = self.loaded_model_names[int(model)]
         self.active_model_names[ch] = model
 
+    def set_stereo(self, cmd, *args):
+        self.stereo = bool(args[0])
+
     def reply_model_names(self, client_addr, cmd, *args):
         self.osc_server.send_message(client_addr, cmd, self.loaded_model_names)
 
@@ -125,7 +130,7 @@ class ManneOSCThread(threading.Thread):
         self.osc_server.send_message(client_addr, cmd, self.active_model_names)
 
     def get_all_params(self):
-        return np.copy(self.latents), np.copy(self.note), np.copy(self.amp), np.copy(self.active_model_names)
+        return self.latents, self.note, self.amp, self.active_model_names, self.stereo
 
 
 class OutputFrameBuffer():
@@ -341,8 +346,11 @@ class ManneRealtime():
         if self.stereo:
             channels = 2
         if self.output_device:
-            self.output_device = self.find_device(self.output_device)
+            (self.output_device, deviceRate) = self.find_device(self.output_device)
+            if self.output_device:
+                self.rate = deviceRate
 
+        print(self.rate)
         self.audio_stream = self.p.open(
             output_device_index=self.output_device,
             format=pyaudio.paFloat32,
@@ -356,11 +364,13 @@ class ManneRealtime():
     def find_device(self, device_name):
         num_devices = self.p.get_device_count()
         for i in range(num_devices):
-            if self.p.get_device_info_by_index(i)['name'] == device_name:
+            info = self.p.get_device_info_by_index(i)
+            if info['name'] == device_name:
                 print(f'[ManneRealtime] output device = {i}: {device_name}')
-                return i
+                print(info)
+                return (i, int(info['defaultSampleRate']))
         print(f'[ManneRealtime] device {device_name} not found. Using default')
-        return None
+        return (None, None)
 
     def run_main(self):
         try:
