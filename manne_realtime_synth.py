@@ -4,6 +4,25 @@ from manne_realtime import ManneRealtime
 import numpy as np
 from os import listdir
 from os.path import join
+# from time import time
+#
+#
+# class Timer():
+#     def __init__(self):
+#         self.start = time()
+#         self.partials = []
+#         self.partial_names = []
+#
+#     def partial(self, name=None):
+#         self.partials.append(time())
+#         self.partial_names.append(name)
+#
+#     def end(self):
+#         self.end = time()
+#         print(f'Total: {self.end - self.start}')
+#         durs = np.diff([self.start] + self.partials)
+#         for (n, dur) in enumerate(durs):
+#             print(f"{self.partial_names[n]}:\t{dur}")
 
 
 class ManneRealtimeSynth(ManneRealtime):
@@ -13,14 +32,19 @@ class ManneRealtimeSynth(ManneRealtime):
                          fft_size, block_size, False, output_device)
 
     def audio_callback(self, in_frames, frame_count, time_info, status_flags):
-        latents, note, amp, models, self.stereo = self.ctrl.get_all_params()
+        # timer = Timer()
+        # latents, note, amp, models, self.stereo = self.ctrl.get_all_params()
+        latents, note, amp, models, self.stereo = self.ctrl.get_changed_params()
+        # timer.partial('get_params')
         self.update_gen_params(models, latents, note)
-        self.set_amp(amp)
+        # timer.partial('update_params')
+        if amp is not None:
+            self.set_amp(amp)
         amp = self._get_updated_amp(self.block_size)
-        out_channels = np.array([gen.get_audio_block() for gen in self.gen])
-        out_channels = np.array(
-            [block * a for (block, a) in zip(out_channels, amp)])
-
+        # timer.partial('update_amp')
+        out_channels = np.array([gen.get_audio_block() * a
+                                 for (gen, a) in zip(self.gen, amp)])
+        # timer.partial('get_blocks')
         # out_channels = np.array([self.gen[ch].get_audio_block() * amp[ch]
         #                          for ch in range(self.num_channels)])
         if self.stereo:
@@ -28,6 +52,8 @@ class ManneRealtimeSynth(ManneRealtime):
             out_frames = np.repeat(out, 2).tobytes()
         else:
             out_frames = out_channels.reshape(-1, order="F")  # interleave
+        # timer.partial('get_frames')
+        # timer.end()
 
         return (out_frames, pyaudio.paContinue)
 

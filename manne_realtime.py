@@ -73,6 +73,10 @@ class ManneOSCThread(threading.Thread):
                        self.reply_active_models, needs_reply_address=True)
         print(f"[OSC] starting server at {host}:{port}")
         self.osc_server = OSCServerClient((host, port), dispatcher)
+        self.amp_changed = False
+        self.latents_changed = False
+        self.note_changed = False
+        self.model_changed = False
 
     def run(self):
         self.osc_server.serve_forever()
@@ -92,33 +96,39 @@ class ManneOSCThread(threading.Thread):
     def set_amp(self, cmd, *args):
         ch = args[0]
         self.amp[ch] = np.float32(args[1])
+        self.amp_changed = True
 
     def set_latent(self, cmd, *args):
         # print('[OSC] set latent', args)
         ch = args[0]
         latent_num, new_val = args[1:3]
         self.latents[ch][latent_num] = new_val
+        self.latents_changed = True
 
     def set_latents(self, cmd, *args):
         # print('[OSC] set latents', args)
         ch = args[0]
         self.latents[ch] = np.array(args[1:])
+        self.latents_changed = True
 
     def note_on(self, cmd, *args):
         print('[OSC] set note', args[:2])
         ch = args[0]
         self.note[ch] = args[1]
         self.amp[ch] = args[2]
+        self.note_changed = True
 
     def note_off(self, cmd, *args):
         ch = args[0]
         self.amp[ch] = 0
+        self.amp_changed = True
 
     def choose_model(self, cmd, *args):
         ch, model = args[:2]
         if type(model) in [int, float]:
             model = self.loaded_model_names[int(model)]
         self.active_model_names[ch] = model
+        self.model_changed = True
 
     def set_stereo(self, cmd, *args):
         self.stereo = bool(args[0])
@@ -131,6 +141,22 @@ class ManneOSCThread(threading.Thread):
 
     def get_all_params(self):
         return self.latents, self.note, self.amp, self.active_model_names, self.stereo
+
+    def get_changed_params(self):
+        res = [None, None, None, None, self.stereo]
+        if self.latents_changed:
+            res[0] = self.latents
+            self.latents_changed = False
+        if self.note_changed:
+            res[1] = self.note
+            self.note_changed = False
+        if self.amp_changed:
+            res[2] = self.amp
+            self.amp_changed = False
+        if self.model_changed:
+            res[3] = self.active_model_names
+            self.model_changed = False
+        return res
 
 
 class OutputFrameBuffer():
@@ -311,10 +337,15 @@ class ManneRealtime():
                 print(f'[ManneSynth] invalid model name "{model_name}"')
 
     def update_gen_params(self, model_names, new_latents, new_notes):
-        for ch in range(self.num_channels):
-            self.set_model(ch, model_names[ch])
-            self.gen[ch].set_latents(new_latents[ch])
-            self.gen[ch].set_note(new_notes[ch])
+        if model_names is not None:
+            for ch in range(self.num_channels):
+                self.set_model(ch, model_names[ch])
+        if new_latents is not None:
+            for ch in range(self.num_channels):
+                self.gen[ch].set_latents(new_latents[ch])
+        if new_notes is not None:
+            for ch in range(self.num_channels):
+                self.gen[ch].set_note(new_notes[ch])
 
     def get_model_names(self):
         return list(self.models.keys())
