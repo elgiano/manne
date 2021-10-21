@@ -152,9 +152,10 @@ class ManneTrain:
         checkpoint_monitor = 'val_loss'
         if len(self.val_data) == 0:
             checkpoint_monitor = 'loss'
+        # Save only weights if vae
         checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
             filepath=checkpoint_path,
-            save_weights_only=False, save_best_only=True,
+            save_weights_only=self.net_type=='vae', save_best_only=True,
             monitor=checkpoint_monitor, mode='min',
         )
         callbacks = [cp_cb, checkpoint_cb]
